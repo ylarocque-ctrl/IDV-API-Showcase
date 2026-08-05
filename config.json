@@ -1,0 +1,478 @@
+{
+  "appTitle": "IDV API Showcase",
+  "appSubtitle": "Upload documents with metadata — see the exact request as you build it",
+
+  "_fieldTypeLegend": "Field keys are capitalized everywhere (templates and presets alike). 'Type' values: 1 = Text, 2 = Numerical, 3 = Date (set 'DateFormat'), 4 = Dropdown (set 'Options'). Add optional 'Mandatory': true to require a value before sending (defaults to false). For type 4 only, add optional 'Multiple': true to allow selecting several options (sent as a comma-separated Value). Template fields/groups use 'Name'/'Fields'; presets additionally carry 'Value' (only 'Name'/'Value' enter the jreq payload).",
+
+  "_searchFieldNote": "Search (Advanced) > Metadata (searchType 2) reuses these same templates. To make a template's fields searchable, add the backend 'FLDID' (number) to each field and 'GRPID' (number) to each group. The field's existing 'Type' doubles as the search FldType (1=Text/FldValue, 2=Number/min-max, 3=Date/min-max, 4=Dropdown/FldValue). Any field missing 'FLDID' still renders, but with an editable ID box so a demoer can type the real FLDID at runtime. All current templates (2, 3, 4, 6, 7, 8) are populated from the live Get Fields endpoint; re-run Get Fields for a template and update these IDs if its definition changes.",
+
+  "environments": [
+    {
+      "name": "Presales Demo Instance",
+      "baseUrl": "https://quad-eu-fm.azurewebsites.net"
+    }
+  ],
+
+  "apiKey": "PASTE_DEMO_KEY_AT_RUNTIME",
+
+  "_tabsNote": "Controls which endpoint tabs are shown when the app loads. 'endpoint' must match a tab's data-endpoint in index.html. 'visible': true shows the tab on load, false hides it (it can still be re-enabled at runtime via the 'Tabs' picker beside the instance selector). Any tab in index.html that is missing here defaults to visible.",
+  "tabs": [
+    { "endpoint": "upload",    "label": "File Upload",        "visible": true },
+    { "endpoint": "metadata",  "label": "Add/Modify Metadata", "visible": true },
+    { "endpoint": "list",      "label": "File Listing",       "visible": true },
+    { "endpoint": "fields",    "label": "Get Fields",         "visible": true },
+    { "endpoint": "download",  "label": "File Download",      "visible": true },
+    { "endpoint": "search",    "label": "Search (Basic)",     "visible": true },
+    { "endpoint": "searchadv", "label": "Search (Advanced)",  "visible": true }
+  ],
+
+  "_uploadFolderNote": "'defaults.currentFldrID' is the folder pre-selected on the File Upload tab at load; it must match an 'id' in 'folders' or the first folder in that list is used instead. Selecting a preset no longer changes the folder — presets supply metadata values only, and the folder stays wherever the demoer put it. The 'currentFldrID' still present on each preset is therefore no longer read; the value sent in the request always comes from the folder picker.",
+
+  "uploadEndpoint": {
+    "method": "POST",
+    "path": "/v1/api/upload",
+    "fileFieldName": "file",
+    "jsonFieldName": "jreq",
+    "defaults": { "currentFldrID": 3 }
+  },
+
+  "listEndpoint": {
+    "method": "GET",
+    "path": "/v1/api/files/list",
+    "defaults": { "page": 1, "limit": 100 },
+    "responseFields": [
+      "FID", "Name", "TID", "Owner", "FldrID", "FPath", "Location", "OMeta",
+      "CrtdOn", "ECSModOn", "Size", "Status", "Type", "LastVersionCrtdOn",
+      "RPolicy", "LHold", "Classification"
+    ]
+  },
+
+  "_downloadResponseNote": "The download endpoint returns the PDF bytes directly (Content-Type: application/pdf), not a JSON envelope. The app does not hard-code that: it reads the response as bytes and classifies it at runtime, checking the Content-Type header and the '%PDF-' file signature. A deployment still answering with the older JSON-with-sasUrl shape therefore keeps working, and the File Download tab shows you which shape actually came back. For the browser to use the real filename instead of 'file-<FID>.pdf', the API must send Content-Disposition AND list it in Access-Control-Expose-Headers — on a cross-origin response JavaScript cannot read any other header.",
+
+  "downloadEndpoint": {
+    "method": "GET",
+    "path": "/v1/api/file/download/{FID}",
+    "defaults": { "FID": "" }
+  },
+
+  "fieldsEndpoint": {
+    "method": "GET",
+    "path": "/v1/api/fields/{TMPLID}",
+    "defaults": { "TMPLID": 2 }
+  },
+
+  "metadataEndpoint": {
+    "method": "POST",
+    "path": "/v1/api/file/add-metadata",
+    "defaults": { "TID": 2, "FID": "", "TMPLID": "" }
+  },
+
+  "searchEndpoint": {
+    "method": "GET",
+    "path": "/v1/api/search",
+    "defaults": { "advance": true, "keyword": "Policy", "owner": 1, "location": 1, "lastModifiedOn": "", "page": 1 },
+    "filesKey": "allFiles",
+    "idField": "FID",
+    "nameField": "Name",
+    "ownerOptions": [
+      { "value": 1, "label": "Workgroup Repository (1)" },
+      { "value": 4, "label": "Specific User (4)" }
+    ],
+    "locationOptions": [
+      { "value": 1, "label": "Anywhere (1)" },
+      { "value": 3, "label": "My Files (3)" },
+      { "value": 4, "label": "Workgroups (4)" },
+      { "value": 5, "label": "Trash (5)" }
+    ],
+    "lastModifiedOptions": [
+      { "value": "", "label": "Not set — omit parameter" },
+      { "value": 1, "label": "Today (1)" },
+      { "value": 2, "label": "Last 7 days (2)" },
+      { "value": 3, "label": "Last 30 days (3)" },
+      { "value": 4, "label": "This year (4)" },
+      { "value": 5, "label": "Last year (5)" },
+      { "value": 6, "label": "Custom date range (6)" }
+    ],
+    "typeOptions": [
+      { "value": 1, "label": "Images" },
+      { "value": 2, "label": "PDFs" },
+      { "value": 3, "label": "Documents" },
+      { "value": 4, "label": "Spreadsheets" },
+      { "value": 5, "label": "Presentations" },
+      { "value": 7, "label": "Audio files" },
+      { "value": 8, "label": "Video files" },
+      { "value": 9, "label": "Folders" },
+      { "value": 10, "label": "Compressed files" },
+      { "value": 11, "label": "HTML" },
+      { "value": 12, "label": "Drawings" },
+      { "value": 13, "label": "Emails" },
+      { "value": 14, "label": "Others" }
+    ]
+  },
+
+  "advancedSearchEndpoint": {
+    "method": "GET",
+    "path": "/v1/api/search",
+    "filesKey": "allFiles",
+    "idField": "FID",
+    "nameField": "Name",
+    "defaults": { "advance": true, "searchType": 0, "name": "Policy", "location": 1, "owner": 1, "page": 1 },
+    "searchTypeOptions": [
+      { "value": 0, "label": "Files / Folders (0)" },
+      { "value": 1, "label": "Emails (1)" },
+      { "value": 2, "label": "Metadata (2)" }
+    ],
+    "ownerOptions": [
+      { "value": 1, "label": "Workgroup Repository (1)" },
+      { "value": 4, "label": "Specific User (4)" }
+    ],
+    "locationOptions": [
+      { "value": 1, "label": "Anywhere (1)" },
+      { "value": 2, "label": "Specific folder (2)" }
+    ],
+    "fldTypeOptions": [
+      { "value": 1, "label": "Text (FldValue)" },
+      { "value": 2, "label": "Number (min/max)" },
+      { "value": 3, "label": "Date (min/max)" },
+      { "value": 4, "label": "Dropdown (FldValue)" }
+    ],
+    "typeOptions": [
+      { "value": 1, "label": "Images" },
+      { "value": 2, "label": "PDFs" },
+      { "value": 3, "label": "Documents" },
+      { "value": 4, "label": "Spreadsheets" },
+      { "value": 5, "label": "Presentations" },
+      { "value": 7, "label": "Audio files" },
+      { "value": 8, "label": "Video files" },
+      { "value": 9, "label": "Folders" },
+      { "value": 10, "label": "Compressed files" },
+      { "value": 11, "label": "HTML" },
+      { "value": 12, "label": "Drawings" },
+      { "value": 13, "label": "Emails" },
+      { "value": 14, "label": "Others" }
+    ]
+  },
+
+  "folders": [
+    { "id": 3, "label": "EvolveStandardDemo (3)" },
+    { "id": 5, "label": "NORAM (5)" },
+    { "id": 6, "label": "EMEA (6)" },
+    { "id": 7, "label": "LATAM (7)" },
+    { "id": 11, "label": "NORAM-YL (11)" }
+  ],
+
+  "templates": [
+    {
+      "id": "",
+      "label": "— Select a template —"
+    },
+    {
+      "id": 2,
+      "label": "Claim (TMPLID 2)",
+      "availableFields": [
+        { "Name": "name", "Type": 1, "FLDID": 2 },
+        { "Name": "surname", "Type": 1, "FLDID": 3 },
+        { "Name": "jobId", "Type": 1, "FLDID": 4 },
+        { "Name": "email", "Type": 1, "Mandatory": true, "FLDID": 5 },
+        { "Name": "customerId", "Type": 1, "FLDID": 6 },
+        { "Name": "phone", "Type": 1, "FLDID": 7 },
+        { "Name": "test1", "Type": 1, "FLDID": 8 },
+        { "Name": "test2", "Type": 1, "FLDID": 9 },
+        { "Name": "test3", "Type": 1, "FLDID": 10 },
+        { "Name": "test4", "Type": 1, "FLDID": 11 },
+        { "Name": "test5", "Type": 1, "FLDID": 12 },
+        { "Name": "test6", "Type": 1, "FLDID": 13 },
+        { "Name": "test7", "Type": 1, "FLDID": 17 },
+        { "Name": "test8", "Type": 1, "FLDID": 18 },
+        { "Name": "test9", "Type": 1, "FLDID": 19 },
+        { "Name": "test10", "Type": 1, "FLDID": 20 },
+        { "Name": "test11", "Type": 1, "FLDID": 21 },
+        { "Name": "test12", "Type": 1, "FLDID": 22 },
+        { "Name": "UserID", "Type": 1, "FLDID": 23 },
+        { "Name": "DocName", "Type": 1, "FLDID": 26 },
+        { "Name": "DocDate", "Type": 1, "FLDID": 24 },
+        { "Name": "DocCategory", "Type": 1, "FLDID": 25 }
+      ]
+    },
+    {
+      "id": 3,
+      "label": "FeenstraInvoice (TMPLID 3)",
+      "availableFields": [
+        { "Name": "Klantnummer", "Type": 1, "Mandatory": true, "FLDID": 14 },
+        { "Name": "Postcode", "Type": 1, "FLDID": 15 },
+        { "Name": "Huisnummer", "Type": 1, "FLDID": 16 }
+      ]
+    },
+    {
+      "id": 4,
+      "label": "TemplateTest (TMPLID 4)",
+      "availableFields": [
+        { "Name": "name", "Type": 1, "FLDID": 2 },
+        { "Name": "surname", "Type": 1, "FLDID": 3 }
+      ],
+      "availableGroups": [
+        {
+          "Name": "BasicInfoGroup",
+          "GRPID": 2,
+          "Fields": [
+            { "Name": "test1", "Type": 1, "FLDID": 8 },
+            { "Name": "test2", "Type": 1, "FLDID": 9 },
+            { "Name": "test3", "Type": 1, "FLDID": 10 },
+            { "Name": "test4", "Type": 1, "FLDID": 11 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "label": "IDVwatch (TMPLID 6)",
+      "availableFields": [
+        { "Name": "UserID", "Type": 1, "FLDID": 23 },
+        { "Name": "BatchID", "Type": 1, "FLDID": 27 },
+        { "Name": "BatchSeq", "Type": 1, "FLDID": 28 },
+        { "Name": "BatchDate", "Type": 1, "FLDID": 29 },
+        { "Name": "jobId", "Type": 1, "FLDID": 4 },
+        { "Name": "emailAddress", "Type": 1, "FLDID": 33 },
+        { "Name": "DocCategory", "Type": 1, "FLDID": 25 },
+        { "Name": "DocDate", "Type": 1, "FLDID": 24 },
+        { "Name": "DocName", "Type": 1, "FLDID": 26 },
+        { "Name": "customerId", "Type": 1, "FLDID": 6 },
+        { "Name": "name", "Type": 1, "FLDID": 2 },
+        { "Name": "surname", "Type": 1, "FLDID": 3 },
+        { "Name": "address", "Type": 1, "FLDID": 30 },
+        { "Name": "city", "Type": 1, "FLDID": 31 },
+        { "Name": "state", "Type": 1, "FLDID": 32 },
+        { "Name": "Postcode", "Type": 1, "FLDID": 15 },
+        { "Name": "phone", "Type": 1, "FLDID": 7 },
+        { "Name": "test1", "Type": 1, "FLDID": 8 },
+        { "Name": "test2", "Type": 1, "FLDID": 9 },
+        { "Name": "test3", "Type": 1, "FLDID": 10 }
+      ]
+    },
+    {
+      "id": 7,
+      "label": "Policy (TMPLID 7)",
+      "availableFields": [
+        { "Name": "test1", "Type": 1, "FLDID": 8 }
+      ],
+      "availableGroups": [
+        {
+          "Name": "Customer Metadata",
+          "GRPID": 3,
+          "Fields": [
+            { "Name": "Customer ID", "Type": 1, "FLDID": 39 },
+            { "Name": "Customer Name", "Type": 1, "FLDID": 35 },
+            { "Name": "Customer Phone", "Type": 1, "FLDID": 40 },
+            { "Name": "Customer Email", "Type": 1, "FLDID": 41 }
+          ]
+        },
+        {
+          "Name": "Communication Metadata",
+          "GRPID": 4,
+          "Fields": [
+            { "Name": "Document UUID", "Type": 1, "FLDID": 34 },
+            { "Name": "Communication Date", "Type": 3, "DateFormat": "YYYY-MM-DD", "FLDID": 36 },
+            { "Name": "Communication Type", "Type": 1, "FLDID": 37 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "label": "TypeTest-All (TMPLID 8)",
+      "availableFields": [
+        { "Name": "Type_Text_F_F", "Type": 1, "FLDID": 43 },
+        { "Name": "Type_Text_T_F", "Type": 1, "FLDID": 44 },
+        { "Name": "Type_Text_F_T", "Type": 1, "Mandatory": true, "FLDID": 45 },
+        { "Name": "Type_Text_T_T", "Type": 1, "Mandatory": true, "FLDID": 46 },
+        { "Name": "Type_Number_F_F", "Type": 2, "FLDID": 47 },
+        { "Name": "Type_Number_T_F", "Type": 2, "FLDID": 48 },
+        { "Name": "Type_Number_F_T", "Type": 2, "Mandatory": true, "FLDID": 49 },
+        { "Name": "Type_Number_T_T", "Type": 2, "Mandatory": true, "FLDID": 50 },
+        { "Name": "Type_Date_F_F", "Type": 3, "DateFormat": "YYYY-MM-DD", "FLDID": 51 },
+        { "Name": "Type_Date_T_F", "Type": 3, "DateFormat": "YYYY-MM-DD", "FLDID": 52 },
+        { "Name": "Type_Date_F_T", "Type": 3, "DateFormat": "YYYY-MM-DD", "Mandatory": true, "FLDID": 53 },
+        { "Name": "Type_Date_T_T", "Type": 3, "DateFormat": "YYYY-MM-DD", "Mandatory": true, "FLDID": 54 },
+        { "Name": "Type_Dropdown_F_F", "Type": 4, "Options": ["Option A", "Option B", "Option C"], "FLDID": 55 },
+        { "Name": "Type_Dropdown_T_F", "Type": 4, "Options": ["Option A", "Option B", "Option C"], "Multiple": true, "FLDID": 56 },
+        { "Name": "Type_Dropdown_F_T", "Type": 4, "Options": ["Option A", "Option B", "Option C"], "Mandatory": true, "FLDID": 57 },
+        { "Name": "Type_Dropdown_T_T", "Type": 4, "Options": ["Option A", "Option B", "Option C"], "Mandatory": true, "Multiple": true, "FLDID": 58 }
+      ]
+    }
+  ],
+
+  "presets": [
+    {
+      "name": "Minimal — folder only",
+      "description": "Upload with no metadata, just a destination folder.",
+      "currentFldrID": 11,
+      "metadata": []
+    },
+    {
+      "name": "Claim (2) - sample",
+      "description": "Claim template (TMPLID 2) with random sample values for all fields.",
+      "currentFldrID": 11,
+      "metadata": [
+        {
+          "TMPLID": 2,
+          "Fields": [
+            { "Name": "name", "Value": "Maria", "Type": 1 },
+            { "Name": "surname", "Value": "Janssen", "Type": 1 },
+            { "Name": "jobId", "Value": "JOB-58213", "Type": 1 },
+            { "Name": "email", "Value": "maria.janssen@example.com", "Type": 1, "Mandatory": true },
+            { "Name": "customerId", "Value": "CUST-90417", "Type": 1 },
+            { "Name": "phone", "Value": "+31 6 21884503", "Type": 1 },
+            { "Name": "test1", "Value": "Sample text for test1", "Type": 1 },
+            { "Name": "test2", "Value": "Sample text for test2", "Type": 1 },
+            { "Name": "test3", "Value": "Sample text for test3", "Type": 1 },
+            { "Name": "test4", "Value": "Sample text for test4", "Type": 1 },
+            { "Name": "test5", "Value": "Sample text for test5", "Type": 1 },
+            { "Name": "test6", "Value": "Sample text for test6", "Type": 1 },
+            { "Name": "test7", "Value": "Sample text for test7", "Type": 1 },
+            { "Name": "test8", "Value": "Sample text for test8", "Type": 1 },
+            { "Name": "test9", "Value": "Sample text for test9", "Type": 1 },
+            { "Name": "test10", "Value": "Sample text for test10", "Type": 1 },
+            { "Name": "test11", "Value": "Sample text for test11", "Type": 1 },
+            { "Name": "test12", "Value": "Sample text for test12", "Type": 1 },
+            { "Name": "UserID", "Value": "USR-3391", "Type": 1 },
+            { "Name": "DocName", "Value": "Claim_Form_2026.pdf", "Type": 1 },
+            { "Name": "DocDate", "Value": "2026-06-16", "Type": 1 },
+            { "Name": "DocCategory", "Value": "Insurance Claim", "Type": 1 }
+          ]
+        }
+      ]
+    },	
+    {
+      "name": "FeenstraInvoice (3) — sample",
+      "description": "FeenstraInvoice template (TMPLID 3) with random sample values.",
+      "currentFldrID": 11,
+      "metadata": [
+        {
+          "TMPLID": 3,
+          "Fields": [
+            { "Name": "Klantnummer", "Value": "4827193", "Type": 2, "Mandatory": true },
+            { "Name": "Postcode", "Value": "3812 GH", "Type": 1 },
+            { "Name": "Huisnummer", "Value": "142", "Type": 2 }
+          ]
+        }
+      ]
+    },	
+    {
+      "name": "TemplateTest (4) — John Doe",
+      "description": "The tested example: one template with two fields and one group (mixed field types).",
+      "currentFldrID": 11,
+      "metadata": [
+        {
+          "TMPLID": 4,
+          "Fields": [
+            { "Name": "name", "Value": "John", "Type": 1 },
+            { "Name": "surname", "Value": "Doe", "Type": 1 }
+          ],
+          "Groups": [
+            {
+              "Name": "BasicInfoGroup",
+              "Fields": [
+                { "Name": "test1", "Value": "Sample text for test1", "Type": 1, "Mandatory": true },
+                { "Name": "test2", "Value": "Sample text for test2", "Type": 1 },
+                { "Name": "test3", "Value": "Sample text for test3", "Type": 1 },
+                { "Name": "test4", "Value": "Sample text for test4", "Type": 1 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "IDVwatch (6) - sample",
+      "description": "IDVwatch template (TMPLID 6) with random sample values for all fields.",
+      "currentFldrID": 11,
+      "metadata": [
+        {
+          "TMPLID": 6,
+          "Fields": [
+            { "Name": "UserID", "Value": "USR-7742", "Type": 1 },
+            { "Name": "BatchID", "Value": "BATCH-20260616", "Type": 1 },
+            { "Name": "BatchSeq", "Value": "7", "Type": 1 },
+            { "Name": "BatchDate", "Value": "2026-06-16", "Type": 1 },
+            { "Name": "jobId", "Value": "JOB-58213", "Type": 1 },
+            { "Name": "emailAddress", "Value": "lars.devries@example.com", "Type": 1 },
+            { "Name": "DocCategory", "Value": "Identity Verification", "Type": 1 },
+            { "Name": "DocDate", "Value": "2026-06-15", "Type": 1 },
+            { "Name": "DocName", "Value": "IDVwatch_Report_2026.pdf", "Type": 1 },
+            { "Name": "customerId", "Value": "CUST-90417", "Type": 1 },
+            { "Name": "name", "Value": "Lars", "Type": 1 },
+            { "Name": "surname", "Value": "de Vries", "Type": 1 },
+            { "Name": "address", "Value": "Keizersgracht 124", "Type": 1 },
+            { "Name": "city", "Value": "Amsterdam", "Type": 1 },
+            { "Name": "state", "Value": "Noord-Holland", "Type": 1 },
+            { "Name": "Postcode", "Value": "1015 CW", "Type": 1 },
+            { "Name": "phone", "Value": "+31 6 21884503", "Type": 1 },
+            { "Name": "test1", "Value": "Sample text for test1", "Type": 1 },
+            { "Name": "test2", "Value": "Sample text for test2", "Type": 1 },
+            { "Name": "test3", "Value": "Sample text for test3", "Type": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Policy (7) - sample",
+      "description": "Policy template (TMPLID 7) with random sample values for the field and both groups.",
+      "currentFldrID": 11,
+      "metadata": [
+        {
+          "TMPLID": 7,
+          "Fields": [
+            { "Name": "test1", "Value": "Sample text for test1", "Type": 1 }
+          ],
+          "Groups": [
+            {
+              "Name": "Customer Metadata",
+              "Fields": [
+                { "Name": "Customer ID", "Value": "CUST-90417", "Type": 1 },
+                { "Name": "Customer Name", "Value": "Sophie Bakker", "Type": 1 },
+                { "Name": "Customer Phone", "Value": "+31 6 21884503", "Type": 1 },
+                { "Name": "Customer Email", "Value": "sophie.bakker@example.com", "Type": 1 }
+              ]
+            },
+            {
+              "Name": "Communication Metadata",
+              "Fields": [
+                { "Name": "Document UUID", "Value": "a3f9c2e1-7b4d-4e88-9f12-6c0d1a2b3e45", "Type": 1 },
+                { "Name": "Communication Date", "Value": "2026-06-16", "Type": 3, "DateFormat": "YYYY-MM-DD" },
+                { "Name": "Communication Type", "Value": "Policy Renewal Notice", "Type": 1 }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TypeTest-All (8) - sample",
+      "description": "TypeTest-All template (TMPLID 8) with random sample values for every type/multiple/mandatory combination.",
+      "currentFldrID": 11,
+      "metadata": [
+        {
+          "TMPLID": 8,
+          "Fields": [
+            { "Name": "Type_Text_F_F", "Value": "Sample text value", "Type": 1 },
+            { "Name": "Type_Text_T_F", "Value": "Sample text value two", "Type": 1 },
+            { "Name": "Type_Text_F_T", "Value": "Required text value", "Type": 1, "Mandatory": true },
+            { "Name": "Type_Text_T_T", "Value": "Required text value two", "Type": 1, "Mandatory": true },
+            { "Name": "Type_Number_F_F", "Value": "4827", "Type": 2 },
+            { "Name": "Type_Number_T_F", "Value": "123456789", "Type": 2 },
+            { "Name": "Type_Number_F_T", "Value": "90417", "Type": 2, "Mandatory": true },
+            { "Name": "Type_Number_T_T", "Value": "62500", "Type": 2, "Mandatory": true },
+            { "Name": "Type_Date_F_F", "Value": "2026-06-16", "Type": 3, "DateFormat": "YYYY-MM-DD" },
+            { "Name": "Type_Date_T_F", "Value": "2026-01-15", "Type": 3, "DateFormat": "YYYY-MM-DD" },
+            { "Name": "Type_Date_F_T", "Value": "2026-05-30", "Type": 3, "DateFormat": "YYYY-MM-DD", "Mandatory": true },
+            { "Name": "Type_Date_T_T", "Value": "2026-04-18", "Type": 3, "DateFormat": "YYYY-MM-DD", "Mandatory": true },
+            { "Name": "Type_Dropdown_F_F", "Value": "Option A", "Type": 4, "Options": ["Option A", "Option B", "Option C"] },
+            { "Name": "Type_Dropdown_T_F", "Value": "Option A, Option C", "Type": 4, "Options": ["Option A", "Option B", "Option C"], "Multiple": true },
+            { "Name": "Type_Dropdown_F_T", "Value": "Option B", "Type": 4, "Options": ["Option A", "Option B", "Option C"], "Mandatory": true },
+            { "Name": "Type_Dropdown_T_T", "Value": "Option B, Option C", "Type": 4, "Options": ["Option A", "Option B", "Option C"], "Mandatory": true, "Multiple": true }
+          ]
+        }
+      ]
+    }
+  ]
+}
