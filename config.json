@@ -23,17 +23,23 @@
     { "endpoint": "fields",    "label": "Get Fields",         "visible": true },
     { "endpoint": "download",  "label": "File Download",      "visible": true },
     { "endpoint": "search",    "label": "Search (Basic)",     "visible": true },
-    { "endpoint": "searchadv", "label": "Search (Advanced)",  "visible": true }
+    { "endpoint": "searchadv", "label": "Search (Advanced)",  "visible": true },
+    { "endpoint": "hascontent", "label": "Has Content",       "visible": true }
   ],
 
-  "_uploadFolderNote": "'defaults.currentFldrID' is the folder pre-selected on the File Upload tab at load; it must match an 'id' in 'folders' or the first folder in that list is used instead. Selecting a preset no longer changes the folder — presets supply metadata values only, and the folder stays wherever the demoer put it. The 'currentFldrID' still present on each preset is therefore no longer read; the value sent in the request always comes from the folder picker.",
+  "_uploadFolderNote": "'defaults.currentFldrID' is the folder pre-selected on the File Upload tab at load; it must match an 'id' in 'folders' or the first folder in that list is used instead. Selecting a preset no longer changes the folder — presets supply metadata values only, and the folder stays wherever the demoer put it. The 'currentFldrID' still present on each preset is therefore no longer read; the value sent in the request always comes from the folder picker. The Destination card can also address the folder by PATH instead of by ID: the spec's 'folderPath' applies only when 'currentFldrID' is absent, so the two are mutually exclusive and the jreq carries exactly one of them.",
+
+  "_fieldFormatNote": "The API's field schema is { Name, Value, Format } with Format a nullable string, on both the upload jreq and add-metadata. The app emits 'Format' ONLY when a template field below declares one — no template currently does, so payloads are unchanged. Add \"Format\": \"...\" to a field in 'templates' to send it. NOTE this is not the same thing as 'DateFormat': DateFormat is ours and is used client-side to format a date picker's value before it becomes 'Value'; 'Format' is the API's own property and nothing populates it automatically, because what it controls is not documented. Confirm its meaning with the API team before using it.",
+
+  "_folderPathRootsNote": "Allowed top-level repositories for the File Upload tab's 'Folder path' mode. A path must start with one of these and must both start and end with a forward slash; anything else is blocked before Send, because a path outside these roots fails server-side mid-demo. Entries are normalised to a trailing slash and matched on that boundary, so '/TestAC' and '/TestAC/' behave identically and a near-miss like '/TestACArchive/' is correctly rejected. Matching is case-sensitive, because the server's folder names are. Add a root here when the environment gains one — no code change needed. An empty list disables the root check and leaves only the slash rules.",
 
   "uploadEndpoint": {
     "method": "POST",
     "path": "/v1/api/upload",
     "fileFieldName": "file",
     "jsonFieldName": "jreq",
-    "defaults": { "currentFldrID": 3 }
+    "defaults": { "currentFldrID": 3 },
+    "folderPathRoots": ["/PresalesDemoRepository/", "/TestAC/"]
   },
 
   "listEndpoint": {
@@ -47,18 +53,28 @@
     ]
   },
 
-  "_downloadResponseNote": "The download endpoint returns the PDF bytes directly (Content-Type: application/pdf), not a JSON envelope. The app does not hard-code that: it reads the response as bytes and classifies it at runtime, checking the Content-Type header and the '%PDF-' file signature. A deployment still answering with the older JSON-with-sasUrl shape therefore keeps working, and the File Download tab shows you which shape actually came back. For the browser to use the real filename instead of 'file-<FID>.pdf', the API must send Content-Disposition AND list it in Access-Control-Expose-Headers — on a cross-origin response JavaScript cannot read any other header.",
+  "_downloadResponseNote": "GET {path} has two response modes, selected by the 'url' query parameter. STREAM MODE (url omitted) returns the file bytes themselves, with Content-Type and Content-Disposition describing the file — it can be a PDF, an image, JSON, or anything else, so the app previews by detected type and always offers Save. URL MODE (url=true) returns JSON instead: {\"sasUrl\": \"<short-lived pre-signed blob URL>\", \"fileResult\": {\"FID\", \"Name\", \"Size\", \"CrtdOn\"}}. The app does not hard-code which mode came back: it classifies the response at runtime from Content-Type, Content-Disposition and the file signature, so a server that ignores the parameter is still handled and the tab tells you which mode it actually got. NOTE ON 'url': the API docs say any non-empty value switches to URL mode, but the live server treats url=false as stream mode. To avoid depending on that disagreement the app OMITS the parameter entirely when the toggle is off, which the docs guarantee means stream mode. 'SocketID' is passed through to the request and the curl commands so progress-event wiring can be demonstrated; the app does not open the WebSocket itself, since that would need a socket.io client and this app ships no dependencies. 'urlParam'/'socketParam' rename those query parameters if the API ever does.",
 
   "downloadEndpoint": {
     "method": "GET",
     "path": "/v1/api/file/download/{FID}",
-    "defaults": { "FID": "" }
+    "urlParam": "url",
+    "socketParam": "SocketID",
+    "defaults": { "FID": "", "url": false, "SocketID": "" }
   },
 
   "fieldsEndpoint": {
     "method": "GET",
     "path": "/v1/api/fields/{TMPLID}",
     "defaults": { "TMPLID": 2 }
+  },
+
+  "_hasContentNote": "GET /v1/api/has-content takes no parameters at all — no path segments, no query string, no body. The user is identified entirely by the Authorization header, so the same URL answers differently for a different key. The response is a single boolean: { \"hasContent\": true }. 'resultField' names the key the tab reads for its yes/no verdict; only a literal true or false counts, and anything else is reported as unreadable rather than being coerced to 'no'.",
+
+  "hasContentEndpoint": {
+    "method": "GET",
+    "path": "/v1/api/has-content",
+    "resultField": "hasContent"
   },
 
   "metadataEndpoint": {

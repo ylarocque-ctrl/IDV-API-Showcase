@@ -26,9 +26,10 @@ live before it's sent:
 | Add/Modify Metadata | `POST /v1/api/file/add-metadata` | JSON body keyed by `TID`/`FID`/`TMPLID` + `Metadatas` |
 | File Listing | `GET /v1/api/files/list` | Query string (`currentFldrID`, paging, dates, response fields) |
 | Get Fields | `GET /v1/api/fields/{TMPLID}` | Request path from a template ID |
-| File Download | `GET /v1/api/file/download/{FID}` | Request path from a file ID; the response **is** the PDF, previewed inline (see below) |
+| File Download | `GET /v1/api/file/download/{FID}` | Request path from a file ID, plus `url` (stream vs. blob-link mode) and `SocketID` query parameters — see below |
 | Search (Basic) | `GET /v1/api/search` | Query string (keyword, owner, location, dates, type filters) |
 | Search (Advanced) | `GET /v1/api/search` | Query string, shape changes with the chosen `searchType` (Files/Folders, Emails, Metadata) |
+| Has Content | `GET /v1/api/has-content` | Nothing — no parameters at all; the API key is the whole request |
 
 Shared UI, present on every tab:
 - **Environment picker** (header) — switches base URL, from `config.json` → `environments`.
@@ -85,45 +86,84 @@ machine's time; treat a near-miss as inconclusive rather than proof.
 File Upload gets the reworded warning but no read-back box: verifying a *new* file is a different
 question from verifying a change to a known FID.
 
-## The File Download response — a PDF, not JSON
+## The File Download endpoint — two response modes
 
-`GET /v1/api/file/download/{FID}` streams the **PDF bytes back on the response itself**
-(`Content-Type: application/pdf`). An earlier version of the API answered with a JSON
-envelope carrying a time-limited `sasUrl` to blob storage instead.
+`GET /v1/api/file/download/{FID}` takes one path parameter and two optional query parameters:
 
-The app does not hard-code either shape. It reads the response as an `ArrayBuffer` and
-classifies it at send time:
+| Parameter | In | Purpose |
+|---|---|---|
+| `FID` | path | Required. The file to download. |
+| `url` | query | Switches the response from the file stream to a JSON envelope with a pre-signed blob link. |
+| `SocketID` | query | Subscribes to real-time download progress on the `single_file_download` WebSocket channel. |
 
-- **PDF** — matched on `Content-Type: application/pdf` *or* on the `%PDF-` file signature in
-  the first five bytes, so a deployment that mislabels the body as
-  `application/octet-stream` is still handled. The bytes become a `blob:` URL, previewed
-  inline in an `<object>` (the browser's own PDF viewer) with **Save** and **Open in new
-  tab** buttons beside it.
-- **JSON with `sasUrl`** — the legacy shape; pretty-printed with the original Download
-  button, so older environments keep demoing correctly.
-- **Anything else** — pretty-printed as JSON or plain text, exactly like the other tabs.
+**Stream mode** (the `url` parameter omitted) returns the file bytes on the response itself, with
+`Content-Type` and `Content-Disposition` describing it. The body can be *any* type — a PDF, an
+image, JSON, a CSV, an Office document — so the tab classifies it and previews accordingly: PDFs
+in the browser's own viewer, images inline, JSON/XML/CSV/text as formatted text, and anything
+else as a Save button alone. **Save always works regardless of type**, and the file keeps the
+server's own filename and extension.
 
-Above the body, the Response panel prints a short readout — Content-Type, the filename the
-server suggested, body size, and which shape was detected. That is the fastest way to
-confirm what an environment is actually returning without opening devtools.
+**URL mode** (`url=true`) returns JSON instead:
 
-Two things worth knowing:
+```json
+{
+  "sasUrl": "https://…blob.core.windows.net/…?sv=…&sig=…",
+  "fileResult": { "FID": 1574, "Name": "IDV_001_Archive_Data_05.json", "Size": 744, "CrtdOn": "2026-08-24T18:02:46.004Z" }
+}
+```
 
-- **Filenames need a CORS opt-in.** JavaScript can only read `Content-Disposition` on a
-  cross-origin response if the API also sends
-  `Access-Control-Expose-Headers: Content-Disposition`. Without it the download still works,
-  it just falls back to `file-<FID>.pdf`. The readout says which case you're in.
-- **Inline preview depends on the browser's PDF viewer.** Some hardened/managed Chrome and
-  Edge profiles disable it; the preview then shows a short fallback message and Save / Open
-  in new tab still work. Embedding a viewer would mean shipping pdf.js, which would break the
-  no-dependencies rule.
+The link is short-lived, pre-signed, and goes straight to blob storage, bypassing the API — useful
+for resumable or parallel transfers, or for handing the URL to another service. The tab shows the
+envelope and offers **Download** plus **Copy sasUrl**.
 
-The per-row **Download** buttons in File Listing and both Search tabs call this same endpoint
-and use the same detection, so the two can't drift apart.
+### Why stream mode omits the parameter instead of sending `url=false`
 
-The generated curl for this tab uses `--output` (write the PDF to a file rather than dump
-binary into the terminal) and `-D -` (print the response headers so the content type is
-visible at a glance).
+The published API description says URL mode triggers on *"any non-empty value, e.g. `url=true`"* —
+but the live server treats `url=false` as **stream** mode. Since the doc and the behaviour
+disagree about what `false` means, the app sends **no `url` parameter at all** for stream mode,
+which the same doc guarantees returns the stream. That keeps the app correct whichever way the
+disagreement is eventually resolved. The off-value is not configurable; if the server's behaviour
+is clarified, change `dlQueryParams()` in `index.html`.
+
+### Nothing is assumed about which mode came back
+
+What the app requested is a hint, never an assumption. A response is treated as the URL envelope
+only if it is small JSON, carries no `Content-Disposition`, *and* actually contains a `sasUrl` —
+that last condition is what stops a streamed `.json` **file** (same `Content-Type`) from being
+mistaken for an envelope. Anything else with a body is treated as the file. The Response panel
+prints **Requested** and **Got back** side by side, so if a deployment ignores the parameter the
+tab says so rather than rendering the wrong thing.
+
+Type detection uses `Content-Type` first, then file signatures (`%PDF-`, PNG/JPEG/GIF/WEBP magic
+bytes), then the filename extension — so a PDF mislabelled as `application/octet-stream` is still
+recognised and previewed.
+
+### SocketID
+
+The value is URL-encoded into the request and both curl commands, so the parameter is
+demonstrable and the app's request matches Swagger exactly. **The app does not open the WebSocket
+itself.** A `SocketID` plus a named channel points at socket.io, whose client is a third-party
+dependency this app deliberately doesn't ship. Per the spec, `started` fires in both modes but
+`downloading`/`completed` only in stream mode, since URL mode never streams bytes.
+
+### curl
+
+The generated curl adapts to the mode. Stream mode adds `-D -` (print response headers) and
+`--output` (write the body to a file rather than dumping binary into the terminal); URL mode
+returns small JSON so it just prints. The `Accept` header matches what the app actually sends:
+`application/octet-stream, application/json` for stream, `application/json` for URL mode.
+
+### CORS
+
+Stream mode responses carry `Access-Control-Allow-Origin: *` **and**
+`Access-Control-Expose-Headers: Content-Disposition,Content-Length`, so the real filename reaches
+the browser. Without that second header the download still works but falls back to
+`file-<FID>` plus an extension guessed from the content type or file signature. The readout says
+which case you're in.
+
+The per-row **Download** buttons in File Listing and both Search tabs always use stream mode —
+their job is to put the file on disk, not to hand back a link — and save under the server's
+filename, extension intact.
 
 ## The tested File Upload payload — do not regress
 
@@ -145,6 +185,61 @@ is assembled from the form and must keep this exact shape:
 
 Any change to the request-building logic must be verified against this shape byte-for-byte
 before it's considered done.
+
+Two optional properties from the Swagger schema sit alongside it, both **off unless explicitly
+asked for**, so the payload above is still exactly what a stock config produces:
+
+- **`folderPath`** replaces `currentFldrID` when the Destination card is switched to path mode.
+  The spec says `folderPath` applies only when `currentFldrID` is absent, so the two are
+  mutually exclusive and the request carries exactly one of them — never both. The value is
+  validated before Send; see "Folder path rules" below.
+- **`Format`** is emitted on a field only when that field declares one in `config.json`. No
+  template currently does. See "Metadata field `Format`" below.
+
+## Folder path rules
+
+A `folderPath` is checked before Send, in the order a person fixes it:
+
+1. It must **start** with `/`.
+2. It must **end** with `/`.
+3. It must start with one of the repository roots the environment actually has, listed in
+   `config.json` → `uploadEndpoint.folderPathRoots` (ships as `/PresalesDemoRepository/` and
+   `/TestAC/`).
+
+The roots exist because a path outside them doesn't fail in the app — it fails server-side, in
+front of a customer. Blocking it here turns a confusing 4xx into an inline message naming the
+paths that do work. The card also carries a standing hint listing the allowed roots, so the rule
+is visible before anything is typed rather than only after a mistake.
+
+Three details worth knowing:
+
+- **Roots are matched on a slash boundary.** Entries are normalised to a trailing slash, so
+  writing `/TestAC` or `/TestAC/` in config behaves identically, and a near-miss like
+  `/TestACArchive/` is correctly rejected instead of matching as a prefix.
+- **Matching is case-sensitive**, because the server's folder names are. Accepting `/testac/`
+  would only move the failure from the app to the request.
+- **Leaving the field repairs the slashes.** A missing leading or trailing `/` is added on blur,
+  since that can only turn an intended path into the required form. The root is never
+  auto-repaired — that would mean guessing which repository was meant — so `documents/projects`
+  becomes `/documents/projects/` and is *still* rejected for its root.
+
+Setting `folderPathRoots` to `[]` disables the root check and leaves only the two slash rules,
+which is the escape hatch if an environment has roots this list doesn't know about.
+
+## Metadata field `Format`
+
+The Swagger field schema is `{ Name, Value, Format }` with `Format` a nullable string, on both
+the upload `jreq` and `POST /api/file/add-metadata`. Adding `"Format": "..."` to a field in
+`config.json` → `templates` (or directly on a preset's field) makes the app emit it; nothing
+populates it automatically.
+
+That restraint is deliberate: **what `Format` controls isn't documented**, and guessing would
+mean every affected field silently starts sending a value the API never asked for. Confirm the
+semantics with the API team before using it.
+
+Do not confuse it with `DateFormat`, which is ours: `DateFormat` is used client-side to format
+a date picker's value *before* it becomes `Value`, and never appears on the wire. `Format` is
+the API's own property and travels as a third key beside `Name` and `Value`.
 
 ## Run it
 
@@ -212,13 +307,14 @@ considerations as running it manually.
 | `environments` | Base URLs in the header dropdown (add sandbox/prod here) |
 | `apiKey` | Pre-filled Authorization header (editable in the UI at demo time) |
 | `tabs` | Which endpoint tabs are visible on load; `endpoint` must match a tab's `data-endpoint` in `index.html` |
-| `uploadEndpoint` | Method, path, multipart field names (`file`, `jreq`), and `defaults.currentFldrID` — the folder pre-selected on load. Must match an `id` in `folders`, or the first folder wins |
+| `uploadEndpoint` | Method, path, multipart field names (`file`, `jreq`), `defaults.currentFldrID` — the folder pre-selected on load, which must match an `id` in `folders` or the first folder wins — and `folderPathRoots`, the repository roots a `folderPath` is allowed to start with (see "Folder path rules") |
 | `metadataEndpoint` | Method, path, defaults for `TID`/`FID`/`TMPLID`. `FID` ships empty so nothing is pre-filled |
 | `listEndpoint` | Method, path, paging defaults, tickable `responseFields` |
 | `fieldsEndpoint` | Method, path, default `TMPLID` (ships as `2`, Claim) |
-| `downloadEndpoint` | Method, path, default `FID` (ships empty). The response shape is detected at runtime, not configured — see `_downloadResponseNote` in `config.json` |
+| `downloadEndpoint` | Method, path, `defaults` for `FID` (ships empty), `url` (starting response mode — `false` = stream) and `SocketID`. `urlParam`/`socketParam` rename those query parameters if the API ever does. The response shape itself is detected at runtime, not configured — see `_downloadResponseNote` in `config.json` |
 | `searchEndpoint` | Method, path, defaults, owner/location/date/type option lists |
 | `advancedSearchEndpoint` | Method, path, defaults, `searchType` + field-type option lists |
+| `hasContentEndpoint` | Method, path, and `resultField` — the response key the tab reads for its yes/no verdict (defaults to `hasContent`). No `defaults` block: the endpoint takes no parameters |
 | `folders` | Friendly entries for the destination-folder dropdown (shared across tabs) |
 | `templates` | Known TMPLIDs with `availableFields` / `availableGroups` — drives field/group names and autocomplete in the metadata builder. `FLDID`/`GRPID` also make a template's fields usable in Search (Advanced) → Metadata |
 | `presets` | One-click demo scenarios that pre-fill a tab's metadata values. **Presets do not change the destination folder** — that stays wherever the demoer set it. The `currentFldrID` still present on each preset is no longer read; set the starting folder in `uploadEndpoint.defaults.currentFldrID` instead |
@@ -237,6 +333,31 @@ Field/template notes (also documented inline in `config.json` under `_fieldTypeL
 - Search (Advanced) → Metadata reuses the same `templates`. To make a field searchable, add
   the backend `FLDID` to it (and `GRPID` to its group). Fields without `FLDID` still
   render, with an editable ID box so a demoer can type the real ID at runtime.
+
+## The Has Content endpoint
+
+`GET /v1/api/has-content` is the simplest call in the API and the simplest tab in the app. It
+takes **no parameters** — no path segments, no query string, no body. The `Authorization`
+header *is* the request: the same URL answers differently for a different key, which is the
+point worth making out loud in a demo, so the Parameters card says so rather than sitting empty.
+
+The response is one boolean:
+
+```json
+{ "hasContent": true }
+```
+
+Two lines of JSON is a weak thing to point at on a screen share, so the Response panel leads
+with a plain-language verdict — a green "This user has content" or an amber "This user has no
+content" — and keeps the raw payload underneath for anyone who wants to see the actual bytes.
+
+The reading is deliberately strict: only a literal `true` or `false` produces a verdict. A
+missing key, a string `"true"`, or a non-JSON body all report **"Couldn't read an answer"**
+rather than being coerced. Quietly turning `undefined` into "no" would be a confident wrong
+answer in front of a customer. Non-2xx responses skip the verdict entirely and just show the
+status and body, like every other tab.
+
+`resultField` in `config.json` renames the key the tab reads, should the API ever change it.
 
 ## Adding a new endpoint tab
 
@@ -265,8 +386,37 @@ CORS. If a request works in curl but fails here with a network error, that's alm
 CORS — host the app on the same domain as the API, allow the demo origin on the API, or use
 the built-in curl tabs as a fallback.
 
+## Coverage against the Swagger spec
+
+Validated as of v0.8.13 against the live spec. The Swagger UI page at `/api/docs/` is a JS
+shell and `/api/docs-json` returns 404, but **`/api/docs/swagger-ui-init.js` embeds the whole
+OpenAPI document inline** — that's the file to read when re-checking coverage.
+
+All ten operations across nine tags are covered by the eight tabs, and every documented
+parameter is now built by the app. The `owner`, `location`, `type`, `lastModifiedOn` and
+advanced `searchtype`/`location` option lists in `config.json` were checked value-by-value
+against the spec's enums and match exactly.
+
+Two things are known-outstanding, both blocked on information rather than effort:
+
+| Item | What's missing |
+|---|---|
+| `Format` semantics | The property is supported but never populated, because what it controls isn't documented. Needs an answer from the API team. |
+| `user-email-token` | The spec declares a second security scheme alongside `x-access-token`. To build it we'd need: which endpoints accept or require it, which header carries it, and whether it replaces or accompanies the current key. |
+
+Two quirks to plan around before automating any of this:
+
+- The spec's `servers` entry is `https://…azurewebsites.net/v1`, while `config.json` puts the
+  host in `baseUrl` and repeats `/v1` inside every `path`. Same URLs either way, but an
+  importer must decide which layer owns `/v1` or you get `/v1/v1/...`.
+- Swagger lists `/api/search`, `/api/search?searchtype=0`, `?searchtype=1` and `?searchtype=2`
+  as four separate path keys. Query strings aren't legal in OpenAPI path keys — it's really one
+  path with a discriminator, which is how the app models it. A naive importer would generate
+  four tabs from those four keys.
+
 ## Roadmap (not yet built)
 
-- Parse the live Swagger/OpenAPI spec so other endpoints appear automatically.
+- Parse the live Swagger/OpenAPI spec so other endpoints appear automatically (read
+  `/api/docs/swagger-ui-init.js`; mind the two quirks above).
 - Richer presets and template definitions in config.
 - Quadient brand colors in the UI.

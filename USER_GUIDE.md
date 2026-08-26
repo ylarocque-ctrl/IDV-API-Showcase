@@ -76,10 +76,26 @@ taking shape in real time during a demo — that's the whole point of the app.
    it, or paste a different key for this session only (this never touches the file).
 2. **File** — drag a file onto the box, or click "browse". This becomes the multipart `file`
    part. Send stays disabled until a file is chosen.
-3. **Destination** — pick a folder from the dropdown (from `config.json` → `folders`), or
-   choose "Custom folder ID…" to type any numeric ID. This sets `currentFldrID`. It starts on
-   **EvolveStandardDemo (3)**; change the starting folder in `config.json` →
-   `uploadEndpoint.defaults.currentFldrID`.
+3. **Destination** — the API accepts either a folder **ID** or a folder **path**, so this card
+   starts with a small picker for which one to send.
+   - **Folder ID** (the default) — pick a folder from the dropdown (from `config.json` →
+     `folders`), or choose "Custom folder ID…" to type any numeric ID. This sets
+     `currentFldrID`. It starts on **EvolveStandardDemo (3)**; change the starting folder in
+     `config.json` → `uploadEndpoint.defaults.currentFldrID`.
+   - **Folder path** — type something like `/PresalesDemoRepository/NORAM/` and the request
+     carries `folderPath` instead. The two are mutually exclusive: the spec says `folderPath` is
+     only used when `currentFldrID` is absent, so the app sends one or the other, never both.
+     Watch the `jreq JSON` panel swap keys as you toggle — it's a tidy way to show a customer
+     that they can integrate by path without knowing internal folder IDs.
+
+     The path is checked before you can Send. It has to start and end with a forward slash, and
+     it has to sit under one of the repositories this environment actually has — currently
+     **`/PresalesDemoRepository/`** or **`/TestAC/`**, both listed in a hint under the field so
+     you don't have to remember. Anything else is blocked with a message naming the paths that
+     do work, which is far better than watching the server reject it mid-demo. If you forget a
+     slash at either end it's added for you when you click away; the repository name is never
+     guessed at, so a wrong root stays flagged until you fix it. Adding a repository is a
+     `config.json` edit (`uploadEndpoint.folderPathRoots`), not a code change.
 4. **Preset** *(optional, but the fastest way to demo)* — pick a saved preset to fill the
    entire Metadata section in one click. Its description appears underneath. Presets **leave
    your folder alone**: whatever destination you picked in step 3 stays put, so you can set the
@@ -93,22 +109,62 @@ taking shape in real time during a demo — that's the whole point of the app.
    a **curl** tab and copy the command as a fallback that always works.
 
 The other tabs (Add/Modify Metadata, File Listing, Get Fields, File Download, Search Basic,
-Search Advanced) follow the same pattern — fill the left-hand cards, watch the right-hand
-console, Send or copy curl.
+Search Advanced, Has Content) follow the same pattern — fill the left-hand cards, watch the
+right-hand console, Send or copy curl.
 
-**File Download is worth a moment of rehearsal**, because it's the one tab whose response
-isn't JSON. Enter a File ID, press Send, and the returned PDF renders right there in the
-Response panel, with **Save** and **Open in new tab** beside it. Above the preview a short
-readout shows the content type, the filename the server suggested, the body size and the
-shape the app detected — a clean way to show a customer that the API really is handing back
-the document itself. The **Download** buttons on each row in File Listing and Search do the
-same thing without the preview: they save the PDF straight to disk.
+One thing to know on **Search (Advanced) → Metadata**: the API requires both a template and at
+least one field value, so Send stays disabled and reads "Enter at least one field value to
+send" until you fill one in. That's the app holding you back from a request the API would
+reject, not a fault — pick your template, type a value into any of its fields, and Send unlocks.
 
-Two things that can surprise you live: if the preview area is blank but Save still works,
-this browser profile has its built-in PDF viewer switched off — use **Open in new tab**. And
-if the saved file is called `file-192.pdf` rather than its real name, the API isn't exposing
-the `Content-Disposition` header to the browser; the readout will say so, and it's a server
-setting, not something to fix in the app.
+**Has Content** is the quickest thing you can show, and a good opener. It takes no parameters
+at all: press **Send request** and the panel answers with a green "This user has content" or an
+amber "This user has no content", with the raw `{ "hasContent": true }` underneath. The whole
+request is the API key, so a nice beat is to paste a different customer's key into the
+Authorization box and send again — same URL, different answer. That makes the point that the
+API scopes everything to the authenticated user without needing a single parameter. If it ever
+says "Couldn't read an answer", the call succeeded but the body wasn't the expected boolean —
+show the raw payload underneath and move on.
+
+**File Download is worth a moment of rehearsal**, because it's the one tab with two different
+response modes and the one whose response isn't an API envelope.
+
+Enter a File ID, then choose a **Response mode**:
+
+**Stream the file** (the default) asks the API for the file itself. The response body *is* the
+document, so the Response panel previews it — PDFs in the browser's own viewer, images inline,
+JSON, CSV, XML and plain text as formatted text — with **Save** and **Open in new tab** beside it.
+Save works for every file type, including ones with no preview, and the file keeps its real name
+and extension. Above the preview a readout shows what you asked for, what came back, the content
+type, the server-suggested filename and the size — a clean way to show a customer that the API is
+handing back the document itself.
+
+**URL to blob storage** sends `url=true` and asks for a link instead. You get back a small JSON
+envelope with a `sasUrl` — a short-lived, pre-signed address that points straight at storage,
+bypassing the API — plus the file's name, size and creation date. Use **Download** to follow it or
+**Copy sasUrl** to paste it elsewhere. This is the mode to show when a customer asks about
+resumable or parallel downloads, or about handing a link to another system. The link expires, so
+if a demo runs long, just send again for a fresh one.
+
+**SocketID** is optional. Fill it in and the value is added to the request and to both curl
+commands, so you can show exactly how a client subscribes to live download progress on the
+`single_file_download` channel. The app doesn't open the socket itself — that would mean bundling
+a WebSocket library, and this app deliberately has no dependencies — so there's no progress bar
+here; the parameter is there to demonstrate the API, not to drive the UI.
+
+The **Download** buttons on each row in File Listing and Search always use stream mode and save
+the file straight to disk, no preview.
+
+Two things that can surprise you live: if a PDF preview area is blank but Save still works, this
+browser profile has its built-in PDF viewer switched off — use **Open in new tab**. And if a saved
+file is called `file-1574` rather than its real name, the API isn't exposing the
+`Content-Disposition` header to the browser; the readout will say so, and it's a server setting,
+not something to fix in the app.
+
+One quirk worth knowing if a customer reads the API docs alongside you: the docs say *any*
+non-empty `url` value switches to link mode, but the live server treats `url=false` as stream
+mode. The app sidesteps the disagreement by sending no `url` parameter at all for stream mode, so
+its URL will be slightly shorter than the one Swagger shows. Both are correct.
 
 ### If a Send shows "Network error"
 
@@ -157,6 +213,7 @@ built-in defaults.
 | Demo their actual metadata schema | `templates` — one entry per `TMPLID`, with `availableFields` / `availableGroups` naming each field, its `Type` (1 Text, 2 Numerical, 3 Date, 4 Dropdown), and optional `Mandatory` / `Options` / `Multiple` |
 | Build a one-click "wow" moment | `presets` — a saved `name`, `description` and full `metadata` block that fills the Upload form's metadata instantly. The `currentFldrID` on a preset is no longer used: the folder stays where you put it |
 | Change which folder the app opens on | `uploadEndpoint` → `defaults.currentFldrID` — must match an `id` in `folders` |
+| Allow a new repository in Folder path mode | `uploadEndpoint` → `folderPathRoots` — add the root, e.g. `"/NewRepo/"`. Set it to `[]` to drop the check entirely |
 
 **A good pre-demo routine:**
 

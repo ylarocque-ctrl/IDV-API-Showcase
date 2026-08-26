@@ -396,6 +396,47 @@
     background:#fff;display:block;
   }
   .pdf-note{margin-top:8px;font-size:12.5px;color:var(--ink-soft)}
+  .img-frame{
+    max-width:100%;max-height:460px;display:block;border:1px solid var(--line);
+    border-radius:8px;background:#fff;
+  }
+
+  /* ---------- boolean verdict (Has Content) ----------
+     The whole response is one true/false, so it gets read from across a room
+     rather than being buried in two lines of JSON. */
+  .bool-verdict{
+    display:flex;align-items:center;gap:12px;
+    border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px;
+  }
+  .bool-verdict .mark{
+    flex:0 0 auto;width:34px;height:34px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-size:19px;font-weight:700;line-height:1;color:#fff;
+  }
+  .bool-verdict .headline{font-size:16px;font-weight:700;line-height:1.25}
+  .bool-verdict .sub{font-size:12.5px;color:var(--ink-soft);margin-top:2px}
+  .bool-verdict.yes{border-color:#bfe3d2;background:#effaf4}
+  .bool-verdict.yes .mark{background:var(--ok)}
+  .bool-verdict.yes .headline{color:var(--ok)}
+  .bool-verdict.no{border-color:#ecd9b6;background:#fdf6e9}
+  .bool-verdict.no .mark{background:var(--warn)}
+  .bool-verdict.no .headline{color:var(--warn)}
+  .bool-verdict.unknown{border-color:#ecc8c4;background:#fdf1f0}
+  .bool-verdict.unknown .mark{background:var(--err);font-size:16px}
+  .bool-verdict.unknown .headline{color:var(--err)}
+
+  /* ---------- stream / URL response-mode picker (File Download) ---------- */
+  .mode-toggle{display:flex;gap:8px;flex-wrap:wrap}
+  .mode-opt{
+    flex:1 1 160px;display:flex;align-items:flex-start;gap:8px;cursor:pointer;
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fff;
+    font-size:13px;font-weight:400;color:var(--ink);text-transform:none;letter-spacing:0;
+    margin-bottom:0;line-height:1.35;
+  }
+  .mode-opt:hover{border-color:#bcc7d6}
+  .mode-opt input{width:auto;margin:2px 0 0;flex:0 0 auto;accent-color:var(--accent)}
+  .mode-opt:has(input:checked){border-color:var(--accent);background:#fff6f3}
+  .mode-hint{font-family:var(--mono);font-size:11.5px;color:var(--ink-soft)}
 
   /* ---------- "was it applied?" verification box ----------
      Shown under a blocked response on a tab that writes data, so a demoer can
@@ -515,6 +556,7 @@
   <button type="button" class="endpoint-tab" data-endpoint="download" data-subtitle="Download a file by ID — see the exact request as you build it">File Download</button>
   <button type="button" class="endpoint-tab" data-endpoint="search" data-subtitle="Search for files and folders — see the exact request as you build it">Search (Basic)</button>
   <button type="button" class="endpoint-tab" data-endpoint="searchadv" data-subtitle="Advanced search — parameters change with the chosen search type">Search (Advanced)</button>
+  <button type="button" class="endpoint-tab" data-endpoint="hascontent" data-subtitle="Check whether the authenticated user has any content — no parameters, just the API key">Has Content</button>
   <!-- To add an endpoint later: add a button here with a unique data-endpoint value
        (and a data-subtitle shown in the header while that tab is active),
        then add a matching <div class="endpoint-panel" data-endpoint="..."> inside <main>. -->
@@ -552,9 +594,20 @@
 
     <div class="card">
       <h2>Destination
-        <span class="info-tip" tabindex="0" role="note" aria-label="Destination help">i<span class="info-bubble">The target folder for the upload — this sets <code>currentFldrID</code> in the request. Choose “Custom folder ID…” to type any numeric ID not in the list.</span></span>
+        <span class="info-tip" tabindex="0" role="note" aria-label="Destination help">i<span class="info-bubble">Where the file lands. The API accepts <strong>either</strong> a folder ID (<code>currentFldrID</code>) <strong>or</strong> a folder path (<code>folderPath</code>) — per the spec, <code>folderPath</code> is only used when <code>currentFldrID</code> isn't provided, so the two are mutually exclusive and this picker sends exactly one of them.</span></span>
       </h2>
-      <div class="row">
+
+      <div class="stack" style="margin-bottom:14px">
+        <label>Address the folder by</label>
+        <div class="mode-toggle">
+          <label class="mode-opt"><input type="radio" name="upDest" id="upDestId" value="id" checked>
+            <span><strong>Folder ID</strong><br><code class="mode-hint">currentFldrID</code></span></label>
+          <label class="mode-opt"><input type="radio" name="upDest" id="upDestPath" value="path">
+            <span><strong>Folder path</strong><br><code class="mode-hint">folderPath</code></span></label>
+        </div>
+      </div>
+
+      <div class="row" id="upFolderIdWrap">
         <div>
           <label for="folderSelect">Folder</label>
           <select id="folderSelect"></select>
@@ -564,6 +617,13 @@
           <input type="number" id="customFolder" min="1" step="1" placeholder="e.g. 11">
           <span class="field-err" id="customFolderErr" style="display:none">Enter a folder ID greater than 0.</span>
         </div>
+      </div>
+
+      <div class="stack" id="upFolderPathWrap" style="display:none">
+        <label for="upFolderPath">Folder path <span class="info-tip" tabindex="0" role="note" aria-label="Folder path help">i<span class="info-bubble">The path to the target folder. Sent as <code>folderPath</code> instead of <code>currentFldrID</code> — the request carries one or the other, never both. It must start <em>and</em> end with a forward slash, and must sit under one of the repository roots the environment actually has; those roots come from <code>config.json</code> → <code>uploadEndpoint.folderPathRoots</code>. A missing leading or trailing slash is added for you when you leave the field.</span></span></label>
+        <input type="text" id="upFolderPath" autocomplete="off" spellcheck="false" placeholder="e.g. /PresalesDemoRepository/NORAM/">
+        <span class="field-err" id="upFolderPathErr" style="display:none"></span>
+        <span class="hint" id="upFolderPathHint" style="display:block;margin-top:6px"></span>
       </div>
     </div>
 
@@ -870,15 +930,30 @@
 
     <div class="card">
       <h2>Parameters <span class="hint">— builds the request path for you</span>
-        <span class="info-tip" tabindex="0" role="note" aria-label="Parameters help">i<span class="info-bubble">Set the path parameter for <code>GET /v1/api/file/download/{FID}</code>. The File ID is required — it's appended to the URL path, not sent as a query string. The response is the <strong>PDF itself</strong>, so the generated curl uses <code>--output</code> to write it to a file (and <code>-D -</code> to print the response headers) rather than dumping binary into your terminal.</span></span>
+        <span class="info-tip" tabindex="0" role="note" aria-label="Parameters help">i<span class="info-bubble"><code>FID</code> is a <strong>path</strong> parameter; <code>url</code> and <code>SocketID</code> are <strong>query</strong> parameters. In stream mode the response body is the file itself, so the generated curl uses <code>--output</code> to write it to a file (and <code>-D -</code> to print the response headers) instead of dumping binary into your terminal. In URL mode the response is small JSON, so the curl prints it normally.</span></span>
       </h2>
 
       <div class="row">
         <div>
-          <label for="dlFID">File ID (FID) <span class="info-tip" tabindex="0" role="note" aria-label="File ID help">i<span class="info-bubble">The unique <code>FID</code> of the file to download (e.g. <code>192</code>). Appended to the request path. Required — a whole number of 1 or greater.</span></span></label>
-          <input type="number" id="dlFID" min="1" step="1" placeholder="e.g. 192">
+          <label for="dlFID">File ID (FID) <span class="info-tip" tabindex="0" role="note" aria-label="File ID help">i<span class="info-bubble">The unique <code>FID</code> of the file to download (e.g. <code>1574</code>). Appended to the request path. Required — a whole number of 1 or greater.</span></span></label>
+          <input type="number" id="dlFID" min="1" step="1" placeholder="e.g. 1574">
           <span class="field-err" id="dlFIDErr" style="display:none">Enter a File ID of 1 or greater.</span>
         </div>
+      </div>
+
+      <div class="stack" style="margin-top:14px">
+        <label>Response mode <span class="info-tip" tabindex="0" role="note" aria-label="Response mode help">i<span class="info-bubble"><strong>Stream</strong> (default) sends no <code>url</code> parameter and the response body <em>is</em> the file — any type, previewed below and saveable. <strong>URL</strong> sends <code>url=true</code> and the response is JSON carrying a short-lived pre-signed blob link (<code>sasUrl</code>) plus <code>fileResult</code> details, for downloading straight from blob storage. The API docs say any non-empty value selects URL mode, but the live server treats <code>url=false</code> as stream — so this app omits the parameter entirely for stream mode, which the docs guarantee.</span></span></label>
+        <div class="mode-toggle">
+          <label class="mode-opt"><input type="radio" name="dlMode" id="dlModeStream" value="stream" checked>
+            <span><strong>Stream</strong> the file<br><code class="mode-hint">url omitted</code></span></label>
+          <label class="mode-opt"><input type="radio" name="dlMode" id="dlModeUrl" value="url">
+            <span><strong>URL</strong> to blob storage<br><code class="mode-hint">url=true</code></span></label>
+        </div>
+      </div>
+
+      <div class="stack" style="margin-top:14px">
+        <label for="dlSocketID">SocketID <span class="hint">— optional</span> <span class="info-tip" tabindex="0" role="note" aria-label="SocketID help">i<span class="info-bubble">Optional WebSocket socket ID. When present the API emits real-time download progress on the <code>single_file_download</code> channel: <code>started</code>, then <code>downloading</code> (throttled ~500&nbsp;ms), then <code>completed</code> or <code>error</code>. Only <code>started</code> fires in URL mode, since the server never streams the bytes. This app passes the value through to the request and the curl commands but does not open the socket itself — that would need a socket.io client, and this app ships no dependencies.</span></span></label>
+        <input type="text" id="dlSocketID" autocomplete="off" spellcheck="false" placeholder="e.g. abc123socket">
       </div>
     </div>
 
@@ -902,7 +977,7 @@
 
     <div class="card response-card" style="margin-top:18px">
       <h2>Response <button type="button" class="resp-copy" id="dlRespCopyBtn" hidden>copy</button></h2>
-      <div id="dlResponseArea"><p class="empty-note">Nothing sent yet. Set the File ID and press “Send request” — the returned PDF is previewed here, with buttons to save it or open it in a new tab.</p></div>
+      <div id="dlResponseArea"><p class="empty-note">Nothing sent yet. Set the File ID and press “Send request” — in stream mode the returned file is previewed here with buttons to save it or open it; in URL mode you get the JSON envelope and a link to blob storage.</p></div>
     </div>
   </section>
   </div><!-- /.endpoint-panel: download -->
@@ -1250,6 +1325,59 @@
     </div>
   </section>
   </div><!-- /.endpoint-panel: searchadv -->
+
+  <!-- ============ HAS CONTENT endpoint ============ -->
+  <div class="endpoint-panel" data-endpoint="hascontent" hidden>
+  <!-- ============ LEFT: builder ============ -->
+  <section aria-label="Request builder">
+
+    <div class="card">
+      <h2>Authorization
+        <span class="info-tip" tabindex="0" role="note" aria-label="Authorization help">i<span class="info-bubble">The API key sent as the <code>Authorization</code> header. It's pre-filled from <code>config.json</code> and shared with the other tabs — editing it here updates them all for this session. On this endpoint the key is the <em>whole</em> request: the answer is about whichever user the key identifies.</span></span>
+      </h2>
+      <div class="stack">
+        <label for="hcApiKey">API key</label>
+        <div class="key-wrap">
+          <input type="password" id="hcApiKey" autocomplete="off" spellcheck="false">
+          <button type="button" id="hcToggleKey">show</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Parameters
+        <span class="info-tip" tabindex="0" role="note" aria-label="Parameters help">i<span class="info-bubble">This endpoint takes none — no path segments, no query string, no body. The user is identified entirely by the <code>Authorization</code> header, so the same URL returns a different answer for a different key.</span></span>
+      </h2>
+      <p class="empty-note" style="margin:0">
+        No parameters. <code>GET /v1/api/has-content</code> answers for the user behind the API
+        key above — swap the key to ask about a different user.
+      </p>
+    </div>
+
+  </section>
+
+  <!-- ============ RIGHT: console ============ -->
+  <section aria-label="Request preview and response" class="console-column">
+    <div class="console">
+      <div class="console-tabs">
+        <button type="button" class="active" data-hctab="curlBash">curl (bash)</button>
+        <button type="button" data-hctab="curlCmd">curl (Windows)</button>
+        <span class="spacer"></span>
+        <button type="button" class="copy-btn" id="hcCopyBtn">copy</button>
+      </div>
+      <pre id="hcConsolePre" aria-live="polite"></pre>
+      <div class="console-foot">
+        <div class="req-line"><span class="method" id="hcReqMethod">GET</span> <span id="hcReqUrl"></span></div>
+        <button class="btn-primary" id="hcSendBtn" type="button">Send request</button>
+      </div>
+    </div>
+
+    <div class="card response-card" style="margin-top:18px">
+      <h2>Response <button type="button" class="resp-copy" id="hcRespCopyBtn" hidden>copy</button></h2>
+      <div id="hcResponseArea"><p class="empty-note">Nothing sent yet. Press “Send request” — the answer is a single <code>hasContent</code> boolean.</p></div>
+    </div>
+  </section>
+  </div><!-- /.endpoint-panel: hascontent -->
 </main>
 
 <div class="toast" id="toast" role="status"></div>
@@ -1261,7 +1389,7 @@
    APP VERSION — edit this single value to bump the displayed version.
    Search this file for "APP_VERSION" to find it.
    =================================================================== */
-const APP_VERSION = "0.8.10";
+const APP_VERSION = "0.8.14";
 
 /* ---- API key gate ----------------------------------------------------------
    The live "Send" buttons on every tab stay disabled until a real key is
@@ -1296,15 +1424,21 @@ const DEFAULT_CONFIG = {
   // above — NOT at the real demo defaults. Folder 3 and TMPLID 2 live in config.json.
   uploadEndpoint: {
     method: "POST", path: "/v1/api/upload", fileFieldName: "file", jsonFieldName: "jreq",
-    defaults: { currentFldrID: 11 }
+    defaults: { currentFldrID: 11 },
+    folderPathRoots: ["/PresalesDemoRepository/", "/TestAC/"]
   },
   listEndpoint: {
     method: "GET", path: "/v1/api/files/list",
     defaults: { page: 1, limit: 100 },
     responseFields: ["FID","Name","TID","Owner","FldrID","FPath","Location","OMeta","CrtdOn","ECSModOn","Size","Status","Type","LastVersionCrtdOn","RPolicy","LHold","Classification"]
   },
-  downloadEndpoint: { method: "GET", path: "/v1/api/file/download/{FID}", defaults: { FID: "" } },
+  downloadEndpoint: {
+    method: "GET", path: "/v1/api/file/download/{FID}",
+    urlParam: "url", socketParam: "SocketID",
+    defaults: { FID: "", url: false, SocketID: "" }
+  },
   fieldsEndpoint: { method: "GET", path: "/v1/api/fields/{TMPLID}", defaults: { TMPLID: 4 } },
+  hasContentEndpoint: { method: "GET", path: "/v1/api/has-content", resultField: "hasContent" },
   metadataEndpoint: {
     method: "POST", path: "/v1/api/file/add-metadata",
     defaults: { TID: 2, FID: "", TMPLID: "" }
@@ -1452,7 +1586,27 @@ function fieldFromDef(def){
   if (def.Options) f.Options = def.Options.slice();
   if (def.Mandatory) f.Mandatory = true;
   if (def.Multiple) f.Multiple = true;
+  // The API's own per-field `Format` (nullable string) — carried through only
+  // when a template in config.json declares one. See payloadField() below.
+  if (def.Format != null && String(def.Format) !== "") f.Format = String(def.Format);
   return f;
+}
+
+/* ---- one field, as it goes on the wire ----------------------------------
+   Both POST bodies use the same field object. The Swagger schema is
+   { Name, Value, Format } with Format nullable, so we emit Format ONLY when
+   the template in config.json declares one — no current template does, which
+   keeps every payload byte-for-byte what it was before this existed.
+
+   Note this is NOT the same thing as `DateFormat`: DateFormat is ours, used
+   client-side to format a date picker's value before it becomes `Value`.
+   `Format` is the API's own property and we don't yet know what it controls,
+   so nothing populates it automatically — adding "Format": "..." to a field
+   in config.json is the only way it appears. */
+function payloadField(f){
+  const out = { Name: f.Name, Value: f.Value };
+  if (f.Format != null && String(f.Format) !== "") out.Format = String(f.Format);
+  return out;
 }
 // Pull just the field names out of a config field-definition list (for datalist autocomplete).
 const defNames = list => (list || []).map(f => (f && f.Name) || f);
@@ -1476,15 +1630,81 @@ function metadataHasInvalid(){
 }
 // When a custom folder ID is in use, it must be a positive integer greater than 0.
 function customFolderInvalid(){
+  if (uploadUsesPath()) return false;          // the ID field isn't in play at all
   if (!state.customFolder) return false;
   const raw = String($("customFolder").value).trim();
   const n = Number(raw);
   return !(raw !== "" && Number.isInteger(n) && n > 0);
 }
 
+/* ---- destination: folder ID or folder path ----
+   The API takes one or the other. Per the spec `folderPath` applies only when
+   `currentFldrID` is absent, so sending both would silently ignore the path —
+   the picker therefore emits exactly one, and the path must be non-empty when
+   that mode is selected. */
+function uploadUsesPath(){ return !!($("upDestPath") && $("upDestPath").checked); }
+function getUploadFolderPath(){ return String(($("upFolderPath") || {}).value || "").trim(); }
+
+/* ---- allowed repository roots ----
+   Only a couple of top-level repositories actually resolve on the demo
+   instance, so a path outside them produces a confusing server-side failure
+   mid-demo. The list is deployment data, not app logic, so it lives in
+   config.json → uploadEndpoint.folderPathRoots.
+
+   Roots are normalised to a trailing slash and matched on that boundary, so
+   "/TestAC" and "/TestAC/" in config behave identically and a near-miss like
+   "/TestACArchive/" is correctly rejected rather than matching on a prefix.
+   Matching is case-SENSITIVE on purpose: the server's folder names are, and
+   silently accepting the wrong case would just move the failure to send time. */
+function folderPathRoots(){
+  const raw = ((config.uploadEndpoint || {}).folderPathRoots)
+           || ((DEFAULT_CONFIG.uploadEndpoint || {}).folderPathRoots) || [];
+  return raw
+    .map(r => String(r || "").trim())
+    .filter(Boolean)
+    .map(r => (r.startsWith("/") ? r : "/" + r))
+    .map(r => (r.endsWith("/") ? r : r + "/"));
+}
+
+/* Returns "" when the path is usable, otherwise the reason to show. Checks run
+   in the order a person fixes them: presence, then the two slashes, then the
+   root. */
+function folderPathProblem(){
+  if (!uploadUsesPath()) return "";
+  const p = getUploadFolderPath();
+  if (p === "") return "empty";
+  if (!p.startsWith("/")) return "Folder path must start with a forward slash.";
+  if (!p.endsWith("/"))   return "Folder path must end with a forward slash.";
+  const roots = folderPathRoots();
+  if (roots.length && !roots.some(r => p.startsWith(r))){
+    const list = roots.length === 1 ? roots[0]
+      : roots.slice(0, -1).join(", ") + " or " + roots[roots.length - 1];
+    return "Folder path must start with " + list + " — those are the repositories this environment has.";
+  }
+  return "";
+}
+function folderPathInvalid(){ return folderPathProblem() !== ""; }
+
+/* Leaving the field repairs the two slashes, which is unambiguous: adding a
+   leading or trailing "/" can only turn an intended path into the required
+   form. The root check is never auto-repaired — that would mean guessing which
+   repository was meant. */
+function normalizeFolderPathOnBlur(){
+  const el = $("upFolderPath");
+  if (!el) return;
+  let p = String(el.value || "").trim();
+  if (p === "") { el.value = ""; return; }
+  if (!p.startsWith("/")) p = "/" + p;
+  if (!p.endsWith("/"))   p = p + "/";
+  if (p !== el.value){ el.value = p; updatePreview(); }
+}
+
 /* ================= jreq construction ================= */
 function buildJreq(){
-  const jreq = { currentFldrID: Number(getFolderId()) || 0 };
+  // Exactly one destination key — never both.
+  const jreq = uploadUsesPath()
+    ? { folderPath: getUploadFolderPath() }
+    : { currentFldrID: Number(getFolderId()) || 0 };
   // Only values actually entered in the UI are emitted: fields with an empty
   // value are skipped, groups with no valued fields are dropped, and a template
   // entry (and the whole metadata array) is omitted until at least one value
@@ -1495,12 +1715,12 @@ function buildJreq(){
   const metadata = state.metadata.map(t => {
     const fields = t.Fields.filter(hasVal);
     const groups = t.Groups
-      .map(g => ({ Name: g.Name, Fields: g.Fields.filter(hasVal).map(f => ({ Name: f.Name, Value: f.Value })) }))
+      .map(g => ({ Name: g.Name, Fields: g.Fields.filter(hasVal).map(payloadField) }))
       .filter(g => g.Fields.length);
     // Nothing entered for this template yet → emit no metadata entry at all.
     if (!fields.length && !groups.length) return null;
     const out = { TMPLID: Number(t.TMPLID) || 0 };
-    if (fields.length) out.Fields = fields.map(f => ({ Name: f.Name, Value: f.Value }));
+    if (fields.length) out.Fields = fields.map(payloadField);
     if (groups.length) out.Groups = groups;
     return out;
   }).filter(Boolean);
@@ -1562,11 +1782,37 @@ function updatePreview(){
   const cfBad = customFolderInvalid();
   $("customFolder").classList.toggle("field-input-invalid", cfBad);
   $("customFolderErr").style.display = cfBad ? "block" : "none";
-  const invalid = metadataHasInvalid() || cfBad;
+
+  // Only one destination control is live at a time.
+  const byPath = uploadUsesPath();
+  $("upFolderIdWrap").style.display = byPath ? "none" : "";
+  $("upFolderPathWrap").style.display = byPath ? "" : "none";
+
+  // "" = fine, "empty" = nothing typed yet, anything else = the reason.
+  const fpProblem = folderPathProblem();
+  const fpBad = fpProblem !== "";
+  const showErr = fpBad && fpProblem !== "empty";     // don't scold an untouched field
+  $("upFolderPath").classList.toggle("field-input-invalid", showErr);
+  $("upFolderPathErr").textContent = showErr ? fpProblem : "";
+  $("upFolderPathErr").style.display = showErr ? "block" : "none";
+
+  // Standing reminder of what this environment will accept.
+  const hint = $("upFolderPathHint");
+  if (hint){
+    const roots = folderPathRoots();
+    hint.textContent = byPath && roots.length
+      ? "Must start and end with “/”. Allowed roots: " + roots.join("  ·  ")
+      : "";
+    hint.style.display = (byPath && roots.length) ? "block" : "none";
+  }
+
+  const invalid = metadataHasInvalid() || cfBad || fpBad;
   const noKey = apiKeyMissing();
   $("sendBtn").disabled = noKey || !state.file || invalid;
   $("sendBtn").textContent = noKey ? NEED_KEY_MSG
     : !state.file ? "Choose a file to send"
+    : fpProblem === "empty" ? "Enter a folder path to send"
+    : fpBad ? "Fix the folder path to send"
     : (invalid ? "Fix invalid fields to send" : "Send request");
 }
 
@@ -1879,7 +2125,7 @@ function populateStaticControls(){
 
 /* ================= sending ================= */
 async function send(){
-  if (!state.file || metadataHasInvalid() || customFolderInvalid()) return;
+  if (!state.file || metadataHasInvalid() || customFolderInvalid() || folderPathInvalid()) return;
   const btn = $("sendBtn");
   btn.disabled = true;
   const original = btn.textContent;
@@ -1978,6 +2224,13 @@ function wireEvents(){
     updatePreview();
   });
   $("customFolder").addEventListener("input", updatePreview);
+
+  // Switching destination mode swaps which key the jreq carries, so the
+  // preview has to be rebuilt on every toggle.
+  $("upDestId").addEventListener("change", updatePreview);
+  $("upDestPath").addEventListener("change", updatePreview);
+  $("upFolderPath").addEventListener("input", updatePreview);
+  $("upFolderPath").addEventListener("blur", normalizeFolderPathOnBlur);
 
   const dz = $("dropzone"), fi = $("fileInput");
   $("browseLink").addEventListener("click", () => fi.click());
@@ -2388,34 +2641,92 @@ function wireListEvents(){
    Self-contained: own state, URL/curl builders and send.
    FID is a PATH parameter (not a query string).
 
-   RESPONSE SHAPE — the endpoint now streams the PDF bytes back directly
-   (Content-Type: application/pdf). Earlier deployments answered with JSON
-   carrying a time-limited `sasUrl` to blob storage instead. We do not
-   assume either one: the response is read as bytes and classified at
-   runtime, so both shapes keep working and the demoer can see on screen
-   exactly which one came back. Error responses (JSON) are pretty-printed
-   like the other tabs. The upload jreq logic above is untouched.
+   TWO RESPONSE MODES, chosen by the `url` query parameter:
+
+     STREAM (url omitted) — the response body IS the file. It can be any
+       type: PDF, image, JSON, CSV, Office document. Content-Type and
+       Content-Disposition describe it. We preview by detected type and
+       always offer Save.
+     URL (url=true) — the response is JSON instead:
+       { sasUrl, fileResult: { FID, Name, Size, CrtdOn } }
+       a short-lived pre-signed blob link, for downloading straight from
+       storage (resumable/parallel transfers, or handing the link onward).
+
+   A NOTE ON `url`: the API docs say "any non-empty value" selects URL mode,
+   but the live server treats url=false as stream mode. Rather than depend on
+   that disagreement we OMIT the parameter for stream mode, which the docs
+   guarantee. See _downloadResponseNote in config.json.
+
+   `SocketID` is passed through to the request and the curl commands so the
+   progress-event wiring is demonstrable, but this app does not open the
+   WebSocket — that would need a socket.io client, and we ship no dependencies.
+
+   Nothing here is hard-coded to a mode: what actually came back is classified
+   at runtime, so a server that ignores the parameter is still handled and the
+   readout says which mode it really got. The upload jreq logic is untouched.
    =================================================================== */
 let dlActiveTab = "curlBash";
-let dlObjectUrl = null;   // blob: URL backing the current PDF preview/save link
+let dlObjectUrl = null;   // blob: URL backing the current preview / save link
 
 const dlCfg = () => config.downloadEndpoint || DEFAULT_CONFIG.downloadEndpoint;
 
-/* Accept header used by both the live send and the generated curl, so the
-   copy-as-curl fallback reproduces the request the app actually makes. */
-const DL_ACCEPT = "application/pdf, application/json";
+/* Accept headers, per mode, used by both the live send and the generated curl
+   so the copy-as-curl fallback reproduces the request the app actually makes. */
+const DL_ACCEPT_STREAM = "application/octet-stream, application/json";
+const DL_ACCEPT_URL    = "application/json";
+const DL_ACCEPT        = DL_ACCEPT_STREAM;   // used by the per-row Download buttons
 
-/* ---- response-shape detection (shared with the per-row Download buttons) ----
-   Content-Type is checked first, but a proxy or a misconfigured content type
-   can hand back application/octet-stream for a genuine PDF, so we also look
-   at the file signature: every PDF starts with the five bytes "%PDF-". */
-function bytesLookLikePdf(buf){
-  if (!buf || buf.byteLength < 5) return false;
-  const head = new Uint8Array(buf, 0, 5);
-  return String.fromCharCode(head[0], head[1], head[2], head[3], head[4]) === "%PDF-";
+/* ---- file-type detection ----------------------------------------------
+   Content-Type is the first source of truth, but servers mislabel binaries as
+   application/octet-stream often enough that we also check file signatures,
+   and fall back to the filename extension. The result only decides how to
+   PREVIEW — Save always works whatever this returns. */
+function magicBytes(buf, n){
+  if (!buf || buf.byteLength < n) return "";
+  const a = new Uint8Array(buf, 0, n);
+  let s = ""; for (let i = 0; i < n; i++) s += String.fromCharCode(a[i]);
+  return s;
+}
+function bytesLookLikePdf(buf){ return magicBytes(buf, 5) === "%PDF-"; }
+function bytesLookLikeImage(buf){
+  const h = magicBytes(buf, 12);
+  return h.startsWith("\x89PNG")            // PNG
+      || h.startsWith("\xFF\xD8\xFF")       // JPEG
+      || h.startsWith("GIF87a") || h.startsWith("GIF89a")
+      || (h.startsWith("RIFF") && h.slice(8, 12) === "WEBP");
 }
 function isPdfResponse(contentType, buf){
   return /application\/pdf/i.test(contentType || "") || bytesLookLikePdf(buf);
+}
+
+const DL_TEXT_CT = /^(?:text\/|application\/(?:json|xml|javascript|x-ndjson|x-yaml)\b|application\/[\w.+-]*\+(?:json|xml)\b)/i;
+const DL_TEXT_EXT = /\.(?:txt|json|xml|csv|tsv|md|log|html?|ya?ml|ini|css|js)$/i;
+
+/* Returns "pdf" | "image" | "text" | "binary" — how to preview the bytes. */
+function classifyFileKind(contentType, buf, filename){
+  const ct = contentType || "";
+  if (isPdfResponse(ct, buf)) return "pdf";
+  if (/^image\//i.test(ct) || bytesLookLikeImage(buf)) return "image";
+  if (DL_TEXT_CT.test(ct)) return "text";
+  if (!ct || /application\/octet-stream/i.test(ct)){
+    // Generic content type: let the filename decide.
+    if (/\.pdf$/i.test(filename || "")) return "pdf";
+    if (/\.(?:png|jpe?g|gif|webp|bmp|svg)$/i.test(filename || "")) return "image";
+    if (DL_TEXT_EXT.test(filename || "")) return "text";
+  }
+  return "binary";
+}
+
+/* Extension to append when the server gave us no filename at all. */
+const DL_CT_EXT = {
+  "application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg",
+  "image/gif": ".gif", "image/webp": ".webp", "image/svg+xml": ".svg",
+  "application/json": ".json", "application/xml": ".xml", "text/xml": ".xml",
+  "text/csv": ".csv", "text/plain": ".txt", "text/html": ".html", "application/zip": ".zip"
+};
+function extForContentType(contentType){
+  const base = String(contentType || "").split(";")[0].trim().toLowerCase();
+  return DL_CT_EXT[base] || "";
 }
 
 /* Filename the server suggested. On a cross-origin call the browser only
@@ -2431,10 +2742,20 @@ function filenameFromDisposition(cd){
   const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(cd);
   return plain ? plain[1].trim() : "";
 }
-function ensurePdfExt(name){
-  const n = String(name || "").trim();
-  if (!n) return "download.pdf";
-  return /\.pdf$/i.test(n) ? n : n.replace(/\.[^./\\]+$/, "") + ".pdf";
+/* Pick the name to save under. The server's own filename wins and is kept
+   EXACTLY as sent — the streamed body is the real file, so rewriting its
+   extension (which an earlier PDF-only version did) would mislabel a .json or
+   .docx as .pdf. An extension is only ever appended when there isn't one. */
+const DL_KIND_EXT = { pdf: ".pdf", image: ".bin", text: ".txt", binary: "" };
+function saveNameFor(serverName, fallbackBase, contentType, kind){
+  const n = String(serverName || "").trim();
+  if (n) return n;
+  const base = String(fallbackBase || "download").trim() || "download";
+  if (/\.[A-Za-z0-9]{1,8}$/.test(base)) return base;
+  // Content-Type first; if it's generic, fall back to what the file signature
+  // told us, so a PDF served as application/octet-stream with no filename
+  // still saves as .pdf rather than extensionless.
+  return base + (extForContentType(contentType) || (kind ? DL_KIND_EXT[kind] || "" : ""));
 }
 function formatBytes(n){
   if (!Number.isFinite(n)) return "unknown";
@@ -2464,10 +2785,30 @@ function dlPath(){
     ? tpl.replace("{FID}", encodeURIComponent(fid))
     : tpl.replace(/\/$/, "") + "/" + encodeURIComponent(fid);
 }
+/* ---- query parameters ----
+   `url` is sent ONLY in URL mode (see the header comment: omitting it is the
+   documented, unambiguous way to ask for the stream). `SocketID` is sent
+   whenever the demoer typed one, URL-encoded as the spec requires. */
+function dlUrlMode(){ return !!($("dlModeUrl") && $("dlModeUrl").checked); }
+function getDlSocketID(){ return String(($("dlSocketID") || {}).value || "").trim(); }
+
+function dlQueryParams(){
+  const cfg = dlCfg();
+  const params = [];
+  if (dlUrlMode()) params.push([cfg.urlParam || "url", "true"]);
+  const sock = getDlSocketID();
+  if (sock) params.push([cfg.socketParam || "SocketID", sock]);
+  return params;
+}
+function dlQueryString(){
+  return dlQueryParams().map(([k, v]) => k + "=" + encodeURIComponent(v)).join("&");
+}
 function dlEndpointUrl(){
   const env = config.environments[$("envSelect").selectedIndex] || config.environments[0];
-  return (env ? env.baseUrl.replace(/\/$/,"") : "") + dlPath();
+  const qs = dlQueryString();
+  return (env ? env.baseUrl.replace(/\/$/,"") : "") + dlPath() + (qs ? "?" + qs : "");
 }
+function dlAccept(){ return dlUrlMode() ? DL_ACCEPT_URL : DL_ACCEPT_STREAM; }
 
 /* ---- validation ---- FID is required; whole number >= 1. */
 function dlFIDInvalid(){
@@ -2477,33 +2818,39 @@ function dlFIDInvalid(){
 }
 
 /* ---- curl generation ----
-   The response body is a binary PDF, so the generated curl writes it to a
-   file with --output instead of dumping raw bytes into the terminal, and
-   -D - prints the response headers so the content type can be checked at a
-   glance. Both commands send the same Accept header as the live send. */
+   Stream mode's body is the file, so the curl writes it out with --output
+   rather than dumping bytes into the terminal, and -D - prints the response
+   headers so Content-Type and Content-Disposition can be read at a glance.
+   URL mode returns small JSON, so it just prints. Both send the same Accept
+   header as the live request. */
 function dlSuggestedFilename(){
-  const fid = getDlFID();
-  return "file-" + (fid || "id") + ".pdf";
+  return "file-" + (getDlFID() || "id");
 }
 function dlCurlBash(){
-  return [
+  const lines = [
     `curl -X '${dlCfg().method}' \\`,
     `  '${dlEndpointUrl()}' \\`,
-    `  -H 'accept: ${DL_ACCEPT}' \\`,
-    `  -H 'Authorization: ${$("dlApiKey").value}' \\`,
-    `  -D - \\`,
-    `  --output '${dlSuggestedFilename()}'`
-  ].join("\n");
+    `  -H 'accept: ${dlAccept()}' \\`,
+    `  -H 'Authorization: ${$("dlApiKey").value}'`
+  ];
+  if (!dlUrlMode()){
+    lines[lines.length - 1] += " \\";
+    lines.push(`  -D - \\`, `  --output '${dlSuggestedFilename()}'`);
+  }
+  return lines.join("\n");
 }
 function dlCurlCmd(){
-  return [
+  const lines = [
     `curl -X "${dlCfg().method}" ^`,
     `  "${dlEndpointUrl()}" ^`,
-    `  -H "accept: ${DL_ACCEPT}" ^`,
-    `  -H "Authorization: ${$("dlApiKey").value}" ^`,
-    `  -D - ^`,
-    `  --output "${dlSuggestedFilename()}"`
-  ].join("\n");
+    `  -H "accept: ${dlAccept()}" ^`,
+    `  -H "Authorization: ${$("dlApiKey").value}"`
+  ];
+  if (!dlUrlMode()){
+    lines[lines.length - 1] += " ^";
+    lines.push(`  -D - ^`, `  --output "${dlSuggestedFilename()}"`);
+  }
+  return lines.join("\n");
 }
 
 /* ---- preview ---- */
@@ -2533,23 +2880,59 @@ function dlMetaHtml(info){
   const muted = t => `<span class="muted">${esc(t)}</span>`;
   const row = (k, v) => `<dt>${esc(k)}</dt><dd>${v}</dd>`;
   return `<dl class="resp-meta">
+    ${row("Requested", esc(info.requested === "url" ? "URL mode (url=true)" : "Stream mode (url omitted)"))}
     ${row("Content-Type", info.contentType ? esc(info.contentType) : muted("not sent"))}
     ${row("Filename", info.filename
         ? esc(info.filename)
         : muted("no Content-Disposition — either not sent, or not exposed to the browser via Access-Control-Expose-Headers"))}
     ${row("Body size", esc(formatBytes(info.byteLength)))}
-    ${row("Detected", esc(info.detected))}
+    ${row("Got back", esc(info.detected))}
   </dl>`;
 }
 
+/* Renders a streamed file according to its detected kind. Save always works;
+   only the preview varies. Sets dlObjectUrl as a side effect. */
+function dlStreamBodyHtml(kind, buf, contentType, fname){
+  dlObjectUrl = URL.createObjectURL(new Blob([buf], { type: contentType || "application/octet-stream" }));
+
+  if (kind === "pdf"){
+    // <object> rather than <iframe>: when the browser has no built-in PDF viewer
+    // (some managed/hardened profiles disable it) it renders the fallback children
+    // instead of a silent blank box. Embedding a real viewer would mean shipping
+    // pdf.js, which would break "no dependencies".
+    return `
+      <object class="pdf-frame" data="${dlObjectUrl}#toolbar=1" type="application/pdf"
+              aria-label="PDF preview of ${esc(fname)}">
+        <p class="empty-note" style="padding:14px">
+          This browser can't preview PDFs inline. Use “Save” or “Open in new tab” below —
+          the file itself downloaded fine.
+        </p>
+      </object>
+      <p class="pdf-note">Rendered by the browser's built-in PDF viewer. If the frame stays blank, use “Open in new tab”.</p>`;
+  }
+  if (kind === "image"){
+    return `<img class="img-frame" src="${dlObjectUrl}" alt="Preview of ${esc(fname)}">`;
+  }
+  if (kind === "text"){
+    const text = new TextDecoder("utf-8").decode(buf);
+    lastDlResponseText = text;                 // the copy button becomes useful here
+    let inner;
+    try { inner = highlightJSON(JSON.stringify(JSON.parse(text), null, 2)); }
+    catch { inner = esc(text); }               // not JSON — show it verbatim
+    return `<pre>${inner || esc("(empty file)")}</pre>
+      <p class="pdf-note">The file's own contents — this is the document, not an API envelope.</p>`;
+  }
+  return `<p class="pdf-note">No inline preview for this file type. Use “Save” below —
+    the bytes came through fine (${esc(formatBytes(buf.byteLength))}).</p>`;
+}
+
 /* ---- sending ----
-   Reads the body as bytes (never as text — .text() would corrupt a PDF) and
-   classifies it:
-     • PDF        -> inline preview in the browser's PDF viewer, plus Save and
-                     Open-in-new-tab buttons backed by a blob: URL.
-     • JSON+sasUrl-> legacy shape; pretty-printed with the original Download
-                     button so older environments still demo correctly.
-     • anything else -> pretty-printed as JSON or plain text, like the other tabs. */
+   The body is always read as bytes — .text() would corrupt a binary file — and
+   then classified. What we asked for is a strong hint, but never an assumption:
+   a URL-mode response is recognised by carrying a `sasUrl`, and anything else
+   with content is treated as the file itself. So a server that ignores the
+   parameter still renders correctly, and the readout says what actually came
+   back next to what was requested. */
 async function sendDownload(){
   if (dlFIDInvalid()) return;
   const btn = $("dlSendBtn");
@@ -2560,11 +2943,12 @@ async function sendDownload(){
   $("dlRespCopyBtn").hidden = true;
   releaseDlObjectUrl();
 
+  const requested = dlUrlMode() ? "url" : "stream";
   const started = performance.now();
   try {
     const res = await fetch(dlEndpointUrl(), {
       method: dlCfg().method,
-      headers: { "accept": DL_ACCEPT, "Authorization": $("dlApiKey").value }
+      headers: { "accept": dlAccept(), "Authorization": $("dlApiKey").value }
     });
     const ms = Math.round(performance.now() - started);
 
@@ -2572,66 +2956,86 @@ async function sendDownload(){
     const contentType = res.headers.get("content-type") || "";
     const disposition = res.headers.get("content-disposition") || "";
     const serverName = filenameFromDisposition(disposition);
-    const isPdf = isPdfResponse(contentType, buf);
 
-    let bodyHtml = "", actionHtml = "", detected = "";
+    // Is this the URL-mode envelope? Only a small JSON body can be, and it must
+    // actually carry a sasUrl — a streamed .json FILE must not be mistaken for one.
+    let envelope = null;
+    const couldBeEnvelope = /application\/json/i.test(contentType) && !disposition && buf.byteLength < 65536;
+    if (couldBeEnvelope){
+      try {
+        const parsed = JSON.parse(new TextDecoder("utf-8").decode(buf));
+        if (parsed && typeof parsed === "object" && parsed.sasUrl) envelope = parsed;
+      } catch { /* not JSON — treat as a streamed file */ }
+    }
 
-    if (isPdf){
-      detected = /application\/pdf/i.test(contentType)
-        ? "PDF — application/pdf"
-        : "PDF — matched by %PDF- signature, Content-Type says " + (contentType || "nothing");
-      const fname = ensurePdfExt(serverName || ("file-" + getDlFID()));
-      dlObjectUrl = URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
-      lastDlResponseText = "";
-      // <object> rather than <iframe>: when the browser has no built-in PDF
-      // viewer (some managed/hardened profiles disable it) it renders the
-      // fallback children instead of a silent blank box. Embedding a real
-      // viewer would mean shipping pdf.js, which would break "no dependencies".
-      bodyHtml = `
-        <object class="pdf-frame" data="${dlObjectUrl}#toolbar=1" type="application/pdf"
-                aria-label="PDF preview of ${esc(fname)}">
-          <p class="empty-note" style="padding:14px">
-            This browser can't preview PDFs inline. Use “Save” or “Open in new tab” below —
-            the file itself downloaded fine.
-          </p>
-        </object>
-        <p class="pdf-note">Rendered by the browser's built-in PDF viewer. If the frame stays blank, use “Open in new tab”.</p>`;
+    let bodyHtml = "", actionHtml = "", detected = "", pill = "", pillWarn = false;
+    lastDlResponseText = "";
+
+    if (envelope){
+      // ---- URL MODE: JSON carrying a pre-signed blob link ----
+      pill = "URL mode";
+      pillWarn = (requested !== "url");
+      detected = requested === "url"
+        ? "JSON envelope with sasUrl — as requested"
+        : "JSON envelope with sasUrl — but stream mode was requested; the server ignored the parameter";
+      const fr = envelope.fileResult || {};
+      const fname = fr.Name || ("file-" + getDlFID());
+      lastDlResponseText = JSON.stringify(envelope, null, 2);
+      $("dlRespCopyBtn").hidden = false;
+      bodyHtml = `<pre>${highlightJSON(JSON.stringify(envelope, null, 2))}</pre>`;
+      actionHtml = `<div class="resp-actions">
+        <a class="btn-primary" href="${esc(envelope.sasUrl)}" target="_blank" rel="noopener" download="${esc(fname)}">Download ${esc(fname)}</a>
+        <button type="button" class="btn-secondary" id="dlCopySasBtn">Copy sasUrl</button>
+      </div>
+      <p class="pdf-note">The link is short-lived and pre-signed — it goes straight to blob storage,
+        bypassing the API. Handy for resumable or parallel transfers, or handing the URL to another
+        service. It will expire, so re-send to get a fresh one.</p>`;
+    } else if (res.ok && buf.byteLength){
+      // ---- STREAM MODE: the body IS the file, whatever type it is ----
+      const kind = classifyFileKind(contentType, buf, serverName);
+      const fname = saveNameFor(serverName, "file-" + getDlFID(), contentType, kind);
+      pill = { pdf: "PDF", image: "Image", text: "Text", binary: "File" }[kind];
+      pillWarn = (requested === "url");
+      const how = /application\/octet-stream/i.test(contentType) && kind !== "binary"
+        ? " (identified by " + (kind === "text" ? "filename" : "file signature") + "; Content-Type is generic)"
+        : "";
+      detected = requested === "url"
+        ? "the file bytes" + how + " — but URL mode was requested; the server ignored the parameter"
+        : "the file bytes" + how;
+      bodyHtml = dlStreamBodyHtml(kind, buf, contentType, fname);
+      if (kind === "text") $("dlRespCopyBtn").hidden = false;
       actionHtml = `<div class="resp-actions">
         <a class="btn-primary" href="${dlObjectUrl}" download="${esc(fname)}">Save ${esc(fname)}</a>
         <a class="btn-secondary" href="${dlObjectUrl}" target="_blank" rel="noopener">Open in new tab</a>
       </div>`;
     } else {
-      // Not a PDF — decode the same bytes as text and handle it like the other tabs.
+      // ---- Errors and empty bodies ----
       const text = new TextDecoder("utf-8").decode(buf);
       lastDlResponseText = text;
       $("dlRespCopyBtn").hidden = false;
-
       let data = null;
       try { data = JSON.parse(text); bodyHtml = `<pre>${highlightJSON(JSON.stringify(data, null, 2))}</pre>`; }
       catch { bodyHtml = `<pre>${esc(text || "(empty response body)")}</pre>`; }
-
-      if (res.ok && data && data.sasUrl){
-        detected = "JSON with sasUrl — legacy shape, not a PDF body";
-        const fname = (data.fileResult && data.fileResult.Name) || ("file-" + getDlFID());
-        actionHtml = `<div class="resp-actions">
-          <a class="btn-primary" href="${esc(data.sasUrl)}" target="_blank" rel="noopener" download="${esc(fname)}">Download ${esc(fname)}</a>
-        </div>`;
-      } else if (data){
-        detected = res.ok ? "JSON — no sasUrl and no PDF body" : "JSON error body";
-      } else {
-        detected = buf.byteLength ? "unrecognised body — not PDF, not JSON" : "empty body";
-      }
+      pill = res.ok ? "empty" : "error";
+      pillWarn = true;
+      detected = buf.byteLength ? (data ? "a JSON error body" : "an unrecognised body") : "an empty body";
     }
 
     area.innerHTML = `
       <div class="resp-head">
         <span class="status-pill ${res.ok ? "ok" : "bad"}">${res.status} ${esc(res.statusText)}</span>
-        <span class="shape-pill${isPdf ? "" : " warn"}">${isPdf ? "PDF" : "not a PDF"}</span>
+        <span class="shape-pill${pillWarn ? " warn" : ""}">${esc(pill)}</span>
         <span class="timing">${ms} ms</span>
       </div>
-      ${dlMetaHtml({ contentType, filename: serverName, byteLength: buf.byteLength, detected })}
+      ${dlMetaHtml({ requested, contentType, filename: serverName, byteLength: buf.byteLength, detected })}
       ${bodyHtml}
       ${actionHtml}`;
+
+    const copySas = $("dlCopySasBtn");
+    if (copySas) copySas.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(envelope.sasUrl); toast("sasUrl copied to clipboard"); }
+      catch { toast("Copy failed — select the text manually"); }
+    });
   } catch (err) {
     const ms = Math.round(performance.now() - started);
     area.innerHTML = `
@@ -2652,6 +3056,11 @@ async function sendDownload(){
 function populateDlControls(){
   const d = dlCfg().defaults || {};
   $("dlFID").value = (d.FID != null) ? d.FID : "";
+  $("dlSocketID").value = (d.SocketID != null) ? d.SocketID : "";
+  // defaults.url picks the starting response mode; anything falsey means stream.
+  const wantUrl = (d.url === true || d.url === "true");
+  $("dlModeUrl").checked = wantUrl;
+  $("dlModeStream").checked = !wantUrl;
 }
 
 /* ---- event wiring ---- */
@@ -2674,6 +3083,11 @@ function wireDlEvents(){
   });
 
   $("dlFID").addEventListener("input", updateDlPreview);
+  $("dlSocketID").addEventListener("input", updateDlPreview);
+  // Switching mode changes the query string, the Accept header and the curl
+  // shape, so the preview has to be rebuilt on every toggle.
+  $("dlModeStream").addEventListener("change", updateDlPreview);
+  $("dlModeUrl").addEventListener("change", updateDlPreview);
 
   document.querySelectorAll(".endpoint-panel[data-endpoint='download'] .console-tabs [data-dtab]").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -3093,10 +3507,12 @@ function renderSearchFileList(files){
 }
 
 /* ---- per-row download: reuse the File Download endpoint by FID ----
-   GET {downloadEndpoint.path with {FID}}. The endpoint returns the PDF bytes
-   directly, so the row buttons save the blob straight to disk; the older
-   JSON+sasUrl shape is still handled as a fallback. Same detection helpers as
-   the File Download tab, so the two can never drift apart. */
+   GET {downloadEndpoint.path with {FID}} in STREAM mode — the `url` parameter
+   is never sent here, because a row button's job is to put the file on disk,
+   not to hand back a link. The response body is the file, of whatever type, so
+   it is saved under the server's own filename with its own extension. The
+   URL-mode envelope is still handled in case a deployment returns one anyway.
+   Shares its helpers with the File Download tab so the two can't drift apart. */
 function dlUrlForFID(fid){
   const env = config.environments[$("envSelect").selectedIndex] || config.environments[0];
   const base = env ? env.baseUrl.replace(/\/$/,"") : "";
@@ -3122,13 +3538,31 @@ async function downloadSearchFile(fid, name, btn){
     });
     const buf = await res.arrayBuffer();
     const contentType = res.headers.get("content-type") || "";
+    const disposition = res.headers.get("content-disposition") || "";
 
-    // Current shape: the PDF bytes come back on the response itself.
-    if (res.ok && isPdfResponse(contentType, buf)){
-      const fname = ensurePdfExt(
-        filenameFromDisposition(res.headers.get("content-disposition")) || name || ("file-" + fid)
-      );
-      const url = URL.createObjectURL(new Blob([buf], { type: "application/pdf" }));
+    // URL mode would arrive as a small JSON body with a sasUrl and no
+    // Content-Disposition. Checked first so a streamed .json FILE — which has
+    // the same Content-Type — is never mistaken for the envelope.
+    let envelope = null;
+    if (/application\/json/i.test(contentType) && !disposition && buf.byteLength < 65536){
+      try {
+        const parsed = JSON.parse(new TextDecoder("utf-8").decode(buf));
+        if (parsed && typeof parsed === "object" && parsed.sasUrl) envelope = parsed;
+      } catch { /* not JSON — treat as a streamed file */ }
+    }
+    if (res.ok && envelope){
+      triggerSasDownload(envelope.sasUrl, (envelope.fileResult && envelope.fileResult.Name) || name);
+      toast("Download started");
+      return;
+    }
+
+    // Stream mode: the body is the file. Keep the server's filename verbatim —
+    // it carries the correct extension, whatever the type.
+    if (res.ok && buf.byteLength){
+      const serverName = filenameFromDisposition(disposition);
+      const fname = saveNameFor(serverName, name || ("file-" + fid), contentType,
+                                classifyFileKind(contentType, buf, serverName));
+      const url = URL.createObjectURL(new Blob([buf], { type: contentType || "application/octet-stream" }));
       triggerBlobDownload(url, fname);
       // Give the browser time to start the save before dropping the blob.
       setTimeout(() => URL.revokeObjectURL(url), 60000);
@@ -3136,16 +3570,10 @@ async function downloadSearchFile(fid, name, btn){
       return;
     }
 
-    // Legacy shape: JSON carrying a time-limited sasUrl to blob storage.
     const text = new TextDecoder("utf-8").decode(buf);
     let data = null; try { data = JSON.parse(text); } catch {}
-    if (res.ok && data && data.sasUrl){
-      triggerSasDownload(data.sasUrl, (data.fileResult && data.fileResult.Name) || name);
-      toast("Download started");
-    } else {
-      const msg = (data && (data.message || data.error)) || (res.status + " " + res.statusText);
-      toast("Download failed — " + msg);
-    }
+    const msg = (data && (data.message || data.error)) || (res.status + " " + res.statusText);
+    toast("Download failed — " + msg);
   } catch (err) {
     toast("Download failed — likely CORS; see console");
     console.error("Download error for FID " + fid, err);
@@ -3490,8 +3918,19 @@ function saTmplidInvalid(){
   const n = Number(raw);
   return !(raw !== "" && Number.isInteger(n) && n >= 1);   // a real template must be chosen
 }
+/* Metadata search (searchtype=2) declares BOTH `TMPLID` and `fields` required.
+   TMPLID is covered by saTmplidInvalid(); this covers `fields`. Without it the
+   app would happily build a request that omits the parameter entirely — valid
+   looking on screen, rejected by the API. A field only counts once it carries
+   a usable value, which is exactly what saBuildFieldsArray() already decides,
+   so the check reuses it rather than duplicating the rules. */
+function saFieldsInvalid(){
+  if (saSearchType() !== 2) return false;
+  return saBuildFieldsArray().length === 0;
+}
 function saHasInvalid(){
-  return saPageInvalid() || saSpfldrInvalid() || saSpUidInvalid() || saTmplidInvalid();
+  return saPageInvalid() || saSpfldrInvalid() || saSpUidInvalid() ||
+         saTmplidInvalid() || saFieldsInvalid();
 }
 
 /* ---- metadata `fields` (type 2) JSON array assembly ----
@@ -3778,10 +4217,13 @@ function updateSaPreview(){
   $("saTmplSelect").classList.toggle("field-input-invalid", tBad);
   $("saTmplidErr").style.display = tBad ? "block" : "none";
 
+  const fieldsBad = saFieldsInvalid();
   const invalid = saHasInvalid();
   const noKey = apiKeyMissing();
   $("saSendBtn").disabled = noKey || invalid;
-  $("saSendBtn").textContent = noKey ? NEED_KEY_MSG : invalid ? "Fix invalid fields to send" : "Send request";
+  $("saSendBtn").textContent = noKey ? NEED_KEY_MSG
+    : (fieldsBad && !tBad) ? "Enter at least one field value to send"
+    : invalid ? "Fix invalid fields to send" : "Send request";
 }
 
 /* ---- pagination (parallels the Basic-search pager, reusing its pure helpers) ---- */
@@ -4084,12 +4526,12 @@ function amBuildJreq(){
   const metadatas = amState.metadata.map(t => {
     const fields = t.Fields.filter(hasVal);
     const groups = t.Groups
-      .map(g => ({ Name: g.Name, Fields: g.Fields.filter(hasVal).map(f => ({ Name: f.Name, Value: f.Value })) }))
+      .map(g => ({ Name: g.Name, Fields: g.Fields.filter(hasVal).map(payloadField) }))
       .filter(g => g.Fields.length);
     // Nothing entered for this template yet → emit no metadata entry at all.
     if (!fields.length && !groups.length) return null;
     const m = { TMPLID: Number(t.TMPLID) || 0 };
-    if (fields.length) m.Fields = fields.map(f => ({ Name: f.Name, Value: f.Value }));
+    if (fields.length) m.Fields = fields.map(payloadField);
     if (groups.length) m.Groups = groups;
     return m;
   }).filter(Boolean);
@@ -4611,6 +5053,181 @@ function wireAmEvents(){
   $("amSendBtn").addEventListener("click", amSend);
 }
 
+/* ===================================================================
+   HAS CONTENT endpoint  (GET /v1/api/has-content)
+   The simplest tab in the app: no path parameters, no query string, no
+   body. The API key IS the request — the answer is scoped to whichever
+   user that key identifies, which is the point worth making in a demo,
+   so the Parameters card says so rather than sitting empty.
+
+   The response is a single boolean:  { "hasContent": true }
+   Two lines of JSON is a weak thing to point at on a screen share, so the
+   Response panel leads with a plain-language verdict and keeps the raw
+   JSON underneath for anyone who wants to see the actual payload.
+
+   The reading is deliberately strict: only a literal boolean counts. A
+   missing or non-boolean `hasContent` reports "couldn't read it" rather
+   than being coerced — quietly turning undefined into "no" would be a
+   confident wrong answer in front of a customer.
+   =================================================================== */
+let hcActiveTab = "curlBash";
+let lastHcResponseText = "";   // raw response body, for the Response copy button
+
+const hcCfg = () => config.hasContentEndpoint || DEFAULT_CONFIG.hasContentEndpoint;
+
+function hcEndpointUrl(){
+  const env = config.environments[$("envSelect").selectedIndex] || config.environments[0];
+  return (env ? env.baseUrl.replace(/\/$/,"") : "") + (hcCfg().path || "");
+}
+
+/* ---- curl generation ---- no parameters, so the command is just the URL,
+   the Accept header and the key. Matches what the live send does. */
+function hcCurlBash(){
+  return [
+    `curl -X '${hcCfg().method}' \\`,
+    `  '${hcEndpointUrl()}' \\`,
+    `  -H 'accept: application/json' \\`,
+    `  -H 'Authorization: ${$("hcApiKey").value}'`
+  ].join("\n");
+}
+function hcCurlCmd(){
+  return [
+    `curl -X "${hcCfg().method}" ^`,
+    `  "${hcEndpointUrl()}" ^`,
+    `  -H "accept: application/json" ^`,
+    `  -H "Authorization: ${$("hcApiKey").value}"`
+  ].join("\n");
+}
+function hcConsoleText(){
+  return (hcActiveTab === "curlBash") ? hcCurlBash() : hcCurlCmd();
+}
+
+/* ---- preview ---- nothing to validate but the API key. */
+function updateHcPreview(){
+  const pre = $("hcConsolePre");
+  pre.innerHTML = esc(hcConsoleText()).replace(/(-H|-X)(?= )/g, '<span class="curl-flag">$1</span>');
+  $("hcReqMethod").textContent = hcCfg().method;
+  $("hcReqUrl").textContent = hcEndpointUrl();
+  const noKey = apiKeyMissing();
+  $("hcSendBtn").disabled = noKey;
+  $("hcSendBtn").textContent = noKey ? NEED_KEY_MSG : "Send request";
+}
+
+/* The headline the demoer actually reads out. */
+function hcVerdictHtml(value){
+  if (value === true){
+    return `<div class="bool-verdict yes">
+      <span class="mark" aria-hidden="true">✓</span>
+      <div><div class="headline">This user has content</div>
+        <div class="sub"><code>hasContent: true</code></div></div></div>`;
+  }
+  if (value === false){
+    return `<div class="bool-verdict no">
+      <span class="mark" aria-hidden="true">–</span>
+      <div><div class="headline">This user has no content</div>
+        <div class="sub"><code>hasContent: false</code> — the call succeeded; the answer is simply no</div></div></div>`;
+  }
+  return `<div class="bool-verdict unknown">
+    <span class="mark" aria-hidden="true">!</span>
+    <div><div class="headline">Couldn't read an answer</div>
+      <div class="sub">The response carried no boolean <code>hasContent</code> — see the body below</div></div></div>`;
+}
+
+/* ---- sending ---- */
+async function hcSend(){
+  const btn = $("hcSendBtn");
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = "Sending…";
+  const area = $("hcResponseArea");
+  $("hcRespCopyBtn").hidden = true;
+
+  const started = performance.now();
+  try {
+    const res = await fetch(hcEndpointUrl(), {
+      method: hcCfg().method,
+      headers: { "accept": "application/json", "Authorization": $("hcApiKey").value }
+    });
+    const ms = Math.round(performance.now() - started);
+    const text = await res.text();
+    lastHcResponseText = text;
+    $("hcRespCopyBtn").hidden = false;
+
+    let data = null, bodyHtml;
+    try { data = JSON.parse(text); bodyHtml = highlightJSON(JSON.stringify(data, null, 2)); }
+    catch { bodyHtml = esc(text || "(empty response body)"); }
+
+    // Strictly a boolean — never coerced. Anything else is "couldn't read it".
+    const field = hcCfg().resultField || "hasContent";
+    const value = (res.ok && data && typeof data[field] === "boolean") ? data[field] : null;
+
+    area.innerHTML = `
+      <div class="resp-head">
+        <span class="status-pill ${res.ok ? "ok" : "bad"}">${res.status} ${esc(res.statusText)}</span>
+        <span class="timing">${ms} ms</span>
+      </div>
+      ${res.ok ? hcVerdictHtml(value) : ""}
+      <pre>${bodyHtml}</pre>`;
+  } catch (err) {
+    const ms = Math.round(performance.now() - started);
+    lastHcResponseText = "";
+    $("hcRespCopyBtn").hidden = true;
+    area.innerHTML = `
+      <div class="resp-head">
+        <span class="status-pill bad">Network error</span>
+        <span class="timing">${ms} ms</span>
+      </div>
+      <pre>${esc(err.message)}</pre>
+      ${networkErrorHelpHtml()}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+    updateHcPreview();
+  }
+}
+
+/* ---- event wiring ---- */
+function wireHcEvents(){
+  // Keep all API key fields in sync — it's the same key.
+  const upKey = $("apiKey"), hcKey = $("hcApiKey");
+  hcKey.value = upKey.value;
+  upKey.addEventListener("input", () => { hcKey.value = upKey.value; updateHcPreview(); });
+  hcKey.addEventListener("input", () => {
+    upKey.value = hcKey.value;
+    upKey.dispatchEvent(new Event("input", { bubbles: true }));
+    updateHcPreview();
+  });
+
+  $("hcToggleKey").addEventListener("click", () => {
+    const k = $("hcApiKey");
+    const showing = k.type === "text";
+    k.type = showing ? "password" : "text";
+    $("hcToggleKey").textContent = showing ? "show" : "hide";
+  });
+
+  document.querySelectorAll(".endpoint-panel[data-endpoint='hascontent'] .console-tabs [data-hctab]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".endpoint-panel[data-endpoint='hascontent'] .console-tabs [data-hctab]")
+        .forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      hcActiveTab = btn.dataset.hctab;
+      updateHcPreview();
+    });
+  });
+
+  $("hcCopyBtn").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(hcConsoleText()); toast("Copied to clipboard"); }
+    catch { toast("Copy failed — select the text manually"); }
+  });
+
+  $("hcRespCopyBtn").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(lastHcResponseText); toast("Response copied to clipboard"); }
+    catch { toast("Copy failed — select the text manually"); }
+  });
+
+  $("hcSendBtn").addEventListener("click", hcSend);
+}
+
 /* ================= init ================= */
 async function init(){
   const badge = $("configBadge");
@@ -4640,6 +5257,7 @@ async function init(){
   wireSearchEvents();
   wireSaEvents();
   wireAmEvents();
+  wireHcEvents();
   populateTabPicker();
   wireTabPicker();
   if (config.presets && config.presets.length) loadPreset(0);
@@ -4650,6 +5268,7 @@ async function init(){
   updateSearchPreview();
   updateSaPreview();
   updateAmPreview();
+  updateHcPreview();
 }
 
 init();
